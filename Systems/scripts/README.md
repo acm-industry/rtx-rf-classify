@@ -21,6 +21,20 @@ The script ensures that:
 
 This script can be used both locally for development and in CI/CD pipelines to validate RISC-V compatibility.
 
+## Native Build Support
+
+The `native_build_and_run.sh` script provides a convenient way to build and test the project for the native host architecture (x86/x86_64):
+
+1. **Clean build**: Removes any existing native build directory to avoid CMake cache issues
+2. **Native compilation**: Configures CMake for the host architecture (no toolchain file)
+3. **Execution**: Runs the compiled binary directly on the host system
+
+This is useful for:
+- Quick local development and testing
+- Validating code changes before cross-compiling for RISC-V
+- Debugging issues that may be architecture-specific
+
 ## Files
 
 - `riscv_build_and_run.sh`: Bash script that builds the Docker image, cross-compiles for RISC-V, and executes the binary using QEMU
+- `native_build_and_run.sh`: Bash script that builds and runs the project for the native host architecture
