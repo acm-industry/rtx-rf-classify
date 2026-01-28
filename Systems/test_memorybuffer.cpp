@@ -1,4 +1,5 @@
 #include <iostream>
+#include <list>
 #include <string>
 #include <vector>
 
@@ -84,6 +85,81 @@ void test_multiple_allocators() {
         std::cout << "FAILED\n";
 }
 
+void test_rebind() {
+    std::cout << "Test 6: Rebind with std::list... ";
+    MemoryBuffer buf(4096);
+    auto alloc = buf.get_allocator<int>();
+
+    // std::list uses rebind internally to allocate list nodes
+    std::list<int, decltype(alloc)> lst(alloc);
+    for (int i = 0; i < 10; i++) lst.push_back(i);
+
+    int sum = 0;
+    for (int val : lst) sum += val;
+
+    if (lst.size() == 10 && sum == 45)
+        std::cout << "PASSED\n";
+    else
+        std::cout << "FAILED\n";
+}
+
+void test_propagate_copy() {
+    std::cout << "Test 7: Propagate on copy assignment... ";
+    MemoryBuffer buf(1024);
+    auto alloc1 = buf.get_allocator<int>();
+
+    std::vector<int, decltype(alloc1)> vec1(alloc1);
+    for (int i = 0; i < 5; i++) vec1.push_back(i);
+
+    auto alloc2 = buf.get_allocator<int>();
+    std::vector<int, decltype(alloc2)> vec2(alloc2);
+    vec2 = vec1;
+
+    if (vec2.size() == 5 && vec2[4] == 4 && vec2.get_allocator() == alloc1)
+        std::cout << "PASSED\n";
+    else
+        std::cout << "FAILED\n";
+}
+
+void test_propagate_move() {
+    std::cout << "Test 8: Propagate on move assignment... ";
+    MemoryBuffer buf(1024);
+    auto alloc1 = buf.get_allocator<int>();
+
+    std::vector<int, decltype(alloc1)> vec1(alloc1);
+    for (int i = 0; i < 5; i++) vec1.push_back(i);
+
+    auto alloc2 = buf.get_allocator<int>();
+    std::vector<int, decltype(alloc2)> vec2(alloc2);
+    vec2 = std::move(vec1);  // move assignment
+
+    if (vec2.size() == 5 && vec2[4] == 4 && vec2.get_allocator() == alloc1)
+        std::cout << "PASSED\n";
+    else
+        std::cout << "FAILED\n";
+}
+
+void test_propagate_swap() {
+    std::cout << "Test 9: Propagate on swap... ";
+    MemoryBuffer buf(1024);
+    auto alloc1 = buf.get_allocator<int>();
+
+    std::vector<int, decltype(alloc1)> vec1(alloc1);
+    for (int i = 0; i < 5; i++) vec1.push_back(i);
+
+    auto alloc2 = buf.get_allocator<int>();
+    std::vector<int, decltype(alloc2)> vec2(alloc2);
+    for (int i = 10; i < 15; i++) vec2.push_back(i);
+
+    vec1.swap(vec2);
+
+    if (vec1.size() == 5 && vec1[0] == 10 && vec2.size() == 5 && vec2[0] == 0 &&
+        vec1.get_allocator() == alloc2 && vec2.get_allocator() == alloc1)
+        std::cout << "PASSED\n";
+    else
+        std::cout << "FAILED\n";
+}
+
 int main() {
     std::cout << "=== MemoryBuffer Test Suite ===\n\n";
 
@@ -92,6 +168,10 @@ int main() {
     test_vector();
     test_overflow();
     test_multiple_allocators();
+    test_rebind();
+    test_propagate_copy();
+    test_propagate_move();
+    test_propagate_swap();
 
     std::cout << "\n=== All tests complete ===\n";
     return 0;

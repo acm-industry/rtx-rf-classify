@@ -37,12 +37,26 @@ class MemoryBuffer {
 
        public:
         using value_type = T;
+        using propagate_on_container_copy_assignment = std::true_type;
+        using propagate_on_container_move_assignment = std::true_type;
+        using propagate_on_container_swap = std::true_type;
+
+        template <class U>
+        Allocator(const Allocator<U>& other) : buffer(other.buffer.get()) {}
 
         T* allocate(std::size_t n) {
             return static_cast<T*>(buffer.get().alloc(n * sizeof(T)));
         }
 
         void deallocate(T* p, std::size_t n) {}  // no-op for bump allocator
+
+        bool operator==(const Allocator& other) const {
+            return &buffer.get() == &other.buffer.get();
+        }
+
+        bool operator!=(const Allocator& other) const {
+            return !(*this == other);
+        }
     };
 
     template <class T>
