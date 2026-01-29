@@ -18,5 +18,19 @@ This ensures that the codebase is compatible with RISC-V architecture and can be
 - No architecture-specific assumptions are made in the code
 
 ## Files
+The `test` folder contains tests for some of the applications below. These should go unused unless explicitly for testing.
 
 - `main.cpp`: Main entry point for the application
+
+- `memorybuffer.h`: Header file for MemoryBuffer class:
+Contains a `MemoryBuffer` class for bump-allocating memory from a dedicated memory pool.<br>
+`MemoryBuffer` has two constructors:
+1. `MemoryBuffer(size_t)`: The memory buffer will heap-allocate and manage its own memory. It will allocate the size passed in (in bytes).
+2. `MemoryBuffer(std::span<std::byte>)`: The memory buffer will not assume ownership of the memory, but will instead just manage it. This should primarily be used if static or stack memory is usable. Heap memory should use constructor 1. <br>
+**Note**: The copy and move constructor/assignment methods have all been deleted. This is to ensure that the MemoryBuffer instance is bounded to the scope it is created in. This helps avoid unintended moving of large amounts of data. 
+The class also exposes: <br>
+- `Allocator<T> get_allocator<T>()`: Returns an instance of `Allocator<T>`. Most if not all interactions with the buffer should go through an Allocator.
+- `class Allocator<T>`: This is a STL-container compatible allocator for obtaining memory from the `MemoryBuffer`. It follows the named requirements for an Allocator.
+
+
+- `memorybuffer.cpp`: Some impls for some of the files in `memorybuffer.h`.
