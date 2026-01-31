@@ -6,9 +6,10 @@
 /*
     Purpose: Vector operations interface supporting both scalar and SIMD backends.
 
-    Usage: Include this header and link against the corresponding implementation file.
+    Usage: Include this header and link against the corresponding implementation file. 
+    Make sure to have Highway installed, and set include path for Highway if using SIMD.
         Scalar: g++ -std=c++17 -o my_program my_program.cpp vector_ops.cpp
-        SIMD (Highway): g++ -std=c++17 -DUSE_HIGHWAY -o my_program my_program.cpp vector_ops.cpp -I/path/to/highway
+        SIMD (Highway): g++ -std=c++17 -DUSE_HIGHWAY -o my_program my_program.cpp vector_ops.cpp -I "/path/to/highway"
 
     Notes: 
         The implementation file selects the backend at compile time based on the USE_HIGHWAY macro.
