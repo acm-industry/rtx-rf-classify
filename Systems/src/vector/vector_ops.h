@@ -8,7 +8,6 @@
 
     Usage: Include this header and link against the corresponding implementation file. 
     Make sure to have Highway installed, and set include path for Highway if using SIMD.
-    See Highway documentation for installation instructions.
         Scalar: g++ -std=c++17 -o my_program my_program.cpp vector_ops.cpp
         SIMD (Highway): g++ -std=c++17 -DUSE_HIGHWAY -o my_program my_program.cpp vector_ops.cpp -I "/path/to/highway"
 
@@ -16,6 +15,12 @@
         The implementation file selects the backend at compile time based on the USE_HIGHWAY macro.
         Compile with -DUSE_HIGHWAY to use the Highway SIMD backend.
         Without it, a sequential implementation will be used.
+
+    Highway Installation: https://google.github.io/highway/en/master/README.html#installation
+    Not really sure about Windows/Linux install instructions.
+        Mac: brew install highway
+        Linux: ?
+        Windows: ?
 */
 
 namespace vec {
