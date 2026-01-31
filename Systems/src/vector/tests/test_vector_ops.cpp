@@ -5,6 +5,14 @@
 
 #include "../vector_ops.h"
 
+/* 
+    Purpose: Test suite for vector operations. Times each operation and reports results.
+    Usage: Must install Highway if testing SIMD backend.
+        Scalar: g++ -std=c++17 -o test_vector_ops test_vector_ops.cpp ../vector_ops.cpp
+        SIMD (Highway): g++ -std=c++17 -DUSE_HIGHWAY -o test_vector_ops test_vector_ops.cpp ../vector_ops.cpp -I/path/to/highway
+    Script: A bash script 'bench_vector_ops.sh' is provided to compile and run the tests with timing.
+*/
+
 static double total_us = 0.0;
 
 template<typename F>
