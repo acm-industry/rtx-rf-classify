@@ -10,7 +10,7 @@ HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
 
-// --- add ---
+
 
 void hwy_add(const float* a, const float* b, float* out, size_t n) {
     const ScalableTag<float> d;
@@ -28,7 +28,7 @@ void hwy_add(const float* a, const float* b, float* out, size_t n) {
 }
 
 
-// --- dot ---
+
 
 void hwy_dot(const float* a, const float* b, float* out, size_t n) {
     const ScalableTag<float> d;
@@ -49,7 +49,6 @@ void hwy_dot(const float* a, const float* b, float* out, size_t n) {
 }
 
 
-// --- matmul ---
 
 void hwy_matmul(const float* a, const float* b, float* out,
                 size_t rows_a, size_t cols_a, size_t cols_b) {
@@ -76,7 +75,7 @@ void hwy_matmul(const float* a, const float* b, float* out,
 }
 
 
-// --- matvec ---
+
 
 void hwy_matvec(const float* a, const float* x, float* out,
                 size_t rows, size_t cols) {
@@ -105,7 +104,7 @@ void hwy_matvec(const float* a, const float* x, float* out,
 
 HWY_AFTER_NAMESPACE();
 
-// --- impl_ wrappers ---
+
 
 static void impl_add(const float* a, const float* b, float* out, size_t n) {
     hwy::HWY_NAMESPACE::hwy_add(a, b, out, n);
