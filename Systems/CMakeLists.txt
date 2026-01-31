@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.25)
 project(hello_riscv_qemu LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -9,7 +9,19 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # For native builds: cmake -S . -B build/native
 # For RISC-V builds: cmake -S . -B build/riscv -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/riscv64-linux-gnu.cmake
 
+include(FetchContent)
+
+FetchContent_Declare(
+    mdspan
+    GIT_REPOSITORY https://github.com/kokkos/mdspan.git
+    GIT_TAG stable
+)
+
+FetchContent_MakeAvailable(mdspan)
+
 add_executable(hello src/main.cpp)
+
+target_link_libraries(hello PRIVATE mdspan)
 
 # Use MSVC-specific warning flags on Windows, GCC/Clang flags otherwise
 if (MSVC)
