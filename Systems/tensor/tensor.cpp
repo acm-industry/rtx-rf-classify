@@ -1,3 +1,4 @@
+#include <iostream>
 #include <memory>
 #include <mdspan>
 #include <concepts>
@@ -63,12 +64,20 @@ private:
 
 public:
     // constructor
-    TensorBase() : TensorBase(T{}) {}
-    
-    explicit TensorBase(const T* model_weights) 
+    explicit TensorBase(allocator_type alloc = allocator_type())
         : data_(nullptr, E{}),
-        owned_(nullptr, deleter_type{allocator_, size}),
-        allocator_() {
+          owned_(nullptr, deleter_type{alloc, size}),
+          allocator_(alloc) {
+        T* ptr = allocator_.allocate(size);
+        owned_ = std::unique_ptr<T[], deleter_type>(ptr, deleter_type{allocator_, size});
+        std::uninitialized_fill_n(ptr, size, T{0});
+        data_ = mdspan_type(owned_.get(), E{});
+    }
+    
+    explicit TensorBase(const T* model_weights, allocator_type alloc = allocator_type()) 
+        : data_(nullptr, E{}),
+          owned_(nullptr, deleter_type{alloc, size}),
+          allocator_(alloc) {
         allocate_and_copy(model_weights);
     }
 
@@ -113,11 +122,11 @@ public:
 
     template<typename... Idx>
     requires(sizeof...(Idx) == rank)
-    T& operator()(Idx... idx) { return data_[idx...]; }
+    T& operator[](Idx... idx) { return data_[idx...]; }
 
     template<typename... Idx>
     requires(sizeof...(Idx) == rank)
-    const T& operator()(Idx... idx) const { return data_[idx...]; }
+    const T& operator[](Idx... idx) const { return data_[idx...]; }
 
     T* data() noexcept { return data_.data_handle(); }
     const T* data() const noexcept { return data_.data_handle(); }
@@ -125,6 +134,12 @@ public:
     T& flat(std::size_t idx) {
         return data_.data_handle()[idx];
     }
+
+    const T& flat(std::size_t idx) const {
+        return data_.data_handle()[idx];
+    }
+
+    constexpr std::size_t size() const noexcept { return size; }
 
 private:
     void allocate_and_copy(const T* src) {
