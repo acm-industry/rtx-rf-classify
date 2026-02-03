@@ -7,16 +7,85 @@
 #include "Broadcast.h"
 
 template <class E>
-concept Expression = requires(E a, size_t i) {
-    typename E::reference; // Doesn't have to be a reference; can be a proxy object
-    typename E::extents_type;
+concept Expression = requires( const E& e, std::size_t idx ) {
+    { E::extents };
+    { E::iter_size() } -> std::same_as<size_t>;
+    typename E::value_type;
+    { e.access( idx ) } -> std::convertible_to< typename E::value_type >;
+};
 
-    { E::extents() } -> std::same_as<const typename E::extents_type&>;
-    { E::iter_size() } -> std::convertible_to<size_t>; 
-    { a.access(i) } -> std::same_as<typename E::reference>;
+template <class Callable, class OperandType, std::size_t N_args>
+concept Operation =
+    std::is_empty_v<Callable> &&
+    std::is_default_constructible_v<Callable> &&
+    requires ( Callable callable, std::array<OperandType, N_args> arguments ) {
+        { std::apply( callable, arguments ) } -> std::same_as<OperandType>;
+    };
+
+template <class OperandType>
+struct ScalarExpr {
+    static constexpr auto extents = std::extents<size_t>();
+    using value_type = OperandType;
+
+    static constexpr size_t iter_size() { return 1; }
+
+    OperandType value;
+
+    constexpr ScalarExpr( OperandType val ) : value(val) {}
+    constexpr ScalarExpr() = default;
+
+    constexpr const value_type& access(size_t...) const noexcept {
+        return value;
+    }
+    
+    constexpr value_type& access(size_t...) noexcept {
+        return value;
+    }
 };
 
 
+template <class Op, Expression... Es> requires (
+    sizeof...(Es) > 0 && // More than one argument
+    (std::same_as<typename Es::value_type, typename std::tuple_element<0, std::tuple<Es...>>::type::value_type> && ...) && // All have the same OperandType
+    ( (Es::extents == std::tuple_element<0, std::tuple<Es...>>::type::extents ) && ... ) && // All have the same extents / shape
+    ( (Es::iter_size() == std::tuple_element<0, std::tuple<Es...>>::type::iter_size() ) && ... ) && // All have the same iteration size 
+    Operation<Op, typename std::tuple_element<0, std::tuple<Es...>>::type::value_type, sizeof...(Es)> // Verify Op is an Operation
+)
+class OpExpr {
+    std::tuple<Es...> children;
 
+public:
+    using tuple_elem_zero = typename std::tuple_element_t<0, std::tuple<Es...>>;
+
+    using value_type = typename tuple_elem_zero::value_type;
+    static constexpr auto extents = tuple_elem_zero::extents;
+    static constexpr size_t iter_size() { return tuple_elem_zero::iter_size(); }
+
+    constexpr explicit OpExpr(Es... es) : children{std::move(es)...} {}
+
+    constexpr value_type access( auto... idx ) const { 
+        return std::apply( 
+            [&](auto const&... e) { return Op{}( e.access(idx...)... ); }, 
+            children 
+        ); 
+    }
+    
+
+};
+
+template<class Extents> 
+constexpr std::size_t total_size(Extents) { 
+    std::size_t size = 1; 
+    for (std::size_t i = 0; i < Extents::rank(); ++i) size *= Extents::static_extent(i);
+    return size;
+}
+
+template <Expression E, Expression Out> requires (
+    std::same_as<typename E::value_type, typename Out::value_type> &&
+    E::extents == Out::extents 
+)
+constexpr void in_place_eval( const E& expr, Out& out ) {
+    for (size_t i = 0; i < E::iter_size(); ++i) out.access(i) = expr.access(i);
+}
 
 #endif

@@ -27,7 +27,7 @@ target_link_libraries(hello PRIVATE mdspan)
 if (MSVC)
   target_compile_options(hello PRIVATE /W4)
 else()
-  target_compile_options(hello PRIVATE -Wall -Wextra -Wpedantic -fno-exceptions -fno-rtti)
+  target_compile_options(hello PRIVATE -O3 -Wall -Wextra -Wpedantic -fno-exceptions -fno-rtti)
   # Static linking for cross-compilation (RISC-V); optional for native builds
   # Only apply static linking when cross-compiling (toolchain file is set)
   if(CMAKE_CROSSCOMPILING)
