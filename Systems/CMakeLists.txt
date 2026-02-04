@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.25)
 project(hello_riscv_qemu LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -9,13 +9,25 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # For native builds: cmake -S . -B build/native
 # For RISC-V builds: cmake -S . -B build/riscv -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/riscv64-linux-gnu.cmake
 
+include(FetchContent)
+
+FetchContent_Declare(
+    mdspan
+    GIT_REPOSITORY https://github.com/kokkos/mdspan.git
+    GIT_TAG stable
+)
+
+FetchContent_MakeAvailable(mdspan)
+
 add_executable(hello src/main.cpp)
+
+target_link_libraries(hello PRIVATE mdspan)
 
 # Use MSVC-specific warning flags on Windows, GCC/Clang flags otherwise
 if (MSVC)
   target_compile_options(hello PRIVATE /W4)
 else()
-  target_compile_options(hello PRIVATE -Wall -Wextra -Wpedantic -fno-exceptions -fno-rtti)
+  target_compile_options(hello PRIVATE -O3 -Wall -Wextra -Wpedantic -fno-exceptions -fno-rtti)
   # Static linking for cross-compilation (RISC-V); optional for native builds
   # Only apply static linking when cross-compiling (toolchain file is set)
   if(CMAKE_CROSSCOMPILING)
