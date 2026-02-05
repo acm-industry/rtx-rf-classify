@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake ninja-build build-essential pkg-config \
     gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
     qemu-user \
+    ca-certificates \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work
