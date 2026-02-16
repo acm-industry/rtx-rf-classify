@@ -1,26 +1,36 @@
-#include <iostream>
+#ifndef TENSOR_H
+#define TENSOR_H
+
 #include <memory>
 #include <mdspan>
 #include <concepts>
 #include <algorithm>
 #include <stdexcept>
+#include <utility>
+
+// ============= CONCEPTS =============
 
 template<typename T>
 concept FixedExtent =
-    requires { typename T::index_type; T::rank(); } &&
+    requires {
+        typename T::index_type;
+        { T::rank() } -> std::convertible_to<std::size_t>;
+    } &&
     std::unsigned_integral<typename T::index_type> &&
     ([]<std::size_t... Is>(std::index_sequence<Is...>) {
         return ((T::static_extent(Is) != std::dynamic_extent) && ...);
     })(std::make_index_sequence<T::rank()>{});
 
 template<typename A, typename T>
-concept Allocator = 
+concept Allocator =
     requires(A alloc, T* ptr, std::size_t n) {
         { alloc.allocate(n) } -> std::same_as<T*>;
         { alloc.deallocate(ptr, n) } -> std::same_as<void>;
     };
 
-// compute size of matrix
+// ============= UTILITIES =============
+
+// Compute total size of a fixed extent
 template<typename E>
 constexpr std::size_t compute_static_size() {
     std::size_t result = 1;
@@ -30,11 +40,12 @@ constexpr std::size_t compute_static_size() {
     return result;
 }
 
+// Custom deleter for use with allocators
 template<typename T, typename Allocator>
 struct AllocatorDeleter {
     Allocator alloc;
     std::size_t size;
-    
+
     void operator()(T* ptr) const {
         if (ptr) {
             Allocator a = alloc;
@@ -43,15 +54,21 @@ struct AllocatorDeleter {
     }
 };
 
-template<std::floating_point T, FixedExtent E, Allocator<T> A = std::allocator<T>>
+// ============= TENSORBASE CLASS =============
+
+template<
+    std::floating_point T,
+    FixedExtent E,
+    Allocator<T> A = std::allocator<T>
+>
 class TensorBase {
 public:
-    using value_type = T;
-    using extents_type = E;
+    using value_type     = T;
+    using extents_type   = E;
     using allocator_type = A;
-    using mdspan_type = std::mdspan<T, E>;
-    using index_type = typename E::index_type;
-    using deleter_type = AllocatorDeleter<T, A>;
+    using mdspan_type    = std::mdspan<T, E>;
+    using index_type     = typename E::index_type;
+    using deleter_type   = AllocatorDeleter<T, A>;
 
     static constexpr std::size_t rank = E::rank();
     static constexpr std::size_t size = compute_static_size<E>();
@@ -62,34 +79,42 @@ private:
     allocator_type allocator_;
 
 public:
-    // constructor
+    // ===== Constructors =====
+
     explicit TensorBase(allocator_type alloc = allocator_type())
         : data_(nullptr, E{}),
           owned_(nullptr, deleter_type{alloc, size}),
-          allocator_(alloc) {
+          allocator_(alloc)
+    {
         T* ptr = allocator_.allocate(size);
-        owned_ = std::unique_ptr<T[], deleter_type>(ptr, deleter_type{allocator_, size});
+        owned_ = std::unique_ptr<T[], deleter_type>(
+            ptr, deleter_type{allocator_, size}
+        );
         std::uninitialized_fill_n(ptr, size, T{0});
         data_ = mdspan_type(owned_.get(), E{});
     }
-    
-    explicit TensorBase(const T* model_weights, allocator_type alloc = allocator_type()) 
+
+    explicit TensorBase(const T* model_weights,
+                        allocator_type alloc = allocator_type())
         : data_(nullptr, E{}),
           owned_(nullptr, deleter_type{alloc, size}),
-          allocator_(alloc) {
+          allocator_(alloc)
+    {
         allocate_and_copy(model_weights);
     }
 
-    // rule of 5
+    // ===== Rule of 5 =====
+
     ~TensorBase() = default;
 
-    TensorBase(const TensorBase& other) 
-        : data_(nullptr, E{}), 
-          owned_(nullptr, deleter_type{other.allocator_, size}), 
-          allocator_(other.allocator_) {
+    TensorBase(const TensorBase& other)
+        : data_(nullptr, E{}),
+          owned_(nullptr, deleter_type{other.allocator_, size}),
+          allocator_(other.allocator_)
+    {
         allocate_and_copy(other.data_.data_handle());
     }
-    
+
     TensorBase& operator=(const TensorBase& other) {
         if (this != &other) {
             allocator_ = other.allocator_;
@@ -99,35 +124,41 @@ public:
     }
 
     TensorBase(TensorBase&& other) noexcept
-        : data_(other.data_), 
-          owned_(std::move(other.owned_)), 
-          allocator_(std::move(other.allocator_)) {
+        : data_(other.data_),
+          owned_(std::move(other.owned_)),
+          allocator_(std::move(other.allocator_))
+    {
         other.data_ = mdspan_type(nullptr, E{});
     }
 
     TensorBase& operator=(TensorBase&& other) noexcept {
         if (this != &other) {
-            owned_ = std::move(other.owned_);
-            data_ = other.data_;
+            owned_     = std::move(other.owned_);
+            data_      = other.data_;
             allocator_ = std::move(other.allocator_);
             other.data_ = mdspan_type(nullptr, E{});
         }
         return *this;
     }
 
-    // accessors
+    // ===== Accessors =====
+
     mdspan_type& view() noexcept { return data_; }
     const mdspan_type& view() const noexcept { return data_; }
 
     template<typename... Idx>
     requires(sizeof...(Idx) == rank)
-    T& operator[](Idx... idx) { return data_[idx...]; }
+    T& operator[](Idx... idx) {
+        return data_[idx...];
+    }
 
     template<typename... Idx>
     requires(sizeof...(Idx) == rank)
-    const T& operator[](Idx... idx) const { return data_[idx...]; }
+    const T& operator[](Idx... idx) const {
+        return data_[idx...];
+    }
 
-    // Provide call-operator `()` aliases for multi-index access (tests use `A(i,j)`)
+    // Provide call-operator `()` aliases for multi-index access
     template<typename... Idx>
     requires(sizeof...(Idx) == rank)
     T& operator()(Idx... idx) { return data_[idx...]; }
@@ -150,8 +181,12 @@ public:
 private:
     void allocate_and_copy(const T* src) {
         T* ptr = allocator_.allocate(size);
-        owned_ = std::unique_ptr<T[], deleter_type>(ptr, deleter_type{allocator_, size});
+        owned_ = std::unique_ptr<T[], deleter_type>(
+            ptr, deleter_type{allocator_, size}
+        );
         std::copy_n(src, size, ptr);
         data_ = mdspan_type(owned_.get(), E{});
     }
 };
+
+#endif // TENSOR_H
