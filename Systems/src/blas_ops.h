@@ -14,7 +14,7 @@
     CBLAS routine. Dimension compatibility is enforced via static_assert.
 
     Usage: Include this header and link against OpenBLAS (or any CBLAS provider).
-    Callers pass mdspan views directly — for TensorBase, use tensor.view().
+    Callers pass mdspan views directly - for TensorBase, use tensor.view().
 
     All operations assume row-major layout (CblasRowMajor), matching TensorBase's
     default std::layout_right.

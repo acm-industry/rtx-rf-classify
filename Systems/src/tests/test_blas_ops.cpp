@@ -4,7 +4,7 @@
 #include <iostream>
 #include <mdspan>
 
-#include "../../blas_ops.h"
+#include "../blas_ops.h"
 
 /*
     Purpose: Test suite for blas_ops.h mdspan BLAS wrappers.
