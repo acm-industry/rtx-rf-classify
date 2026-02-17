@@ -143,7 +143,7 @@ public:
                                     int sign = FFTW_FORWARD,
                                     unsigned flags = FFTW_ESTIMATE);
 
-
+};
 
 /**
  * Load FFTW wisdom from a file. Returns true on success.
@@ -166,7 +166,7 @@ bool save_wisdom(const char* filename);
  * @param fft_size   Number of complex FFT outputs
  */
 void compute_power_spectrum(const fftw_complex* fft_out, double* power_out,
-                            std::size_t fft_size);
+                            size_t fft_size);
 
 /**
  * Compute magnitude spectrum: |FFT(x)|
@@ -176,7 +176,7 @@ void compute_power_spectrum(const fftw_complex* fft_out, double* power_out,
  * @param fft_size   Number of complex FFT outputs
  */
 void compute_magnitude(const fftw_complex* fft_out, double* mag_out,
-                       std::size_t fft_size);
+                       size_t fft_size);
 
 } // namespace fft
 

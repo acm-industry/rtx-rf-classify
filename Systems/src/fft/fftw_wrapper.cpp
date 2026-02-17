@@ -33,8 +33,8 @@ bool save_wisdom(const char* filename) {
 }
 
 void compute_power_spectrum(const fftw_complex* fft_out, double* power_out,
-                            std::size_t fft_size) {
-    for (std::size_t i = 0; i < fft_size; ++i) {
+                            size_t fft_size) {
+    for (size_t i = 0; i < fft_size; ++i) {
         double real = fft_out[i][0];
         double imag = fft_out[i][1];
         power_out[i] = real * real + imag * imag;
@@ -42,11 +42,11 @@ void compute_power_spectrum(const fftw_complex* fft_out, double* power_out,
 }
 
 void compute_magnitude(const fftw_complex* fft_out, double* mag_out,
-                       std::size_t fft_size) {
-    for (std::size_t i = 0; i < fft_size; ++i) {
+                       size_t fft_size) {
+    for (size_t i = 0; i < fft_size; ++i) {
         double real = fft_out[i][0];
         double imag = fft_out[i][1];
-        mag_out[i] = std::sqrt(real * real + imag * imag);
+        mag_out[i] = sqrt(real * real + imag * imag);
     }
 }
 
