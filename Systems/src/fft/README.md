@@ -1,211 +1,147 @@
 # FFTW Wrapper
 
-This module provides a C++ wrapper around FFTW3 for FFT-based signal preprocessing in the RF classification pipeline.
+C++ wrapper around FFTW3 for FFT-based signal preprocessing in the RF classification pipeline. Converts raw I/Q signals into power spectra for CNN input.
 
 ## Installation
 
 FFTW3 is required for native builds:
 
 ```bash
-# macOS (Homebrew)
+# macOS
 brew install fftw
 
 # Ubuntu/Debian
 sudo apt install libfftw3-dev
-
-# Fedora/RHEL
-sudo dnf install fftw-devel
 ```
 
-## Build
+## Build and Run
 
 ```bash
 cd Systems
-cmake -S . -B build/native -DUSE_FFTW=ON
-cmake --build build/native --target test_fft
-./build/native/test_fft
+g++ -std=c++23 -O3 \
+  -I src -I /opt/homebrew/include -I build/native/_deps/mdspan-src/include \
+  src/fft/fftw_wrapper.cpp src/tests/test_fft.cpp \
+  -L /opt/homebrew/lib -lfftw3 \
+  -o test_fft && ./test_fft
 ```
 
-## FFTW Efficiency Guide
+## Pipeline
 
-FFTW uses a **plan → execute** model that separates algorithm selection from computation. Understanding this model is critical for optimal performance.
+```
+I/Q Tensor [2 x 128]        (row 0 = I, row 1 = Q)
+    | load_iq_to_complex()
+fftw_complex[128]            (I -> real, Q -> imag)
+    | plan.execute()
+fftw_complex[128]            (complex frequency bins)
+    | compute_power_spectrum()
+double[128]                  (power at each frequency bin)
+    |
+CNN (Conv1D)                 -> class label
+```
 
-### The Plan-Execute Model
+## Usage
+
+### Single I/Q Signal
 
 ```cpp
 #include "fft/fftw_wrapper.h"
 
-// 1. Allocate arrays (use fftw_malloc for SIMD alignment)
+constexpr int N = 128;
 auto* in = static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * N));
 auto* out = static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * N));
 
-// 2. Create plan ONCE (potentially expensive, depending on flag used)
-auto plan = fft::PlanFactory::create_1d_c2c(N, in, out, FFTW_FORWARD, FFTW_MEASURE);
-
-// 3. Execute MANY times
-for (int i = 0; i < num_signals; ++i) {
-    load_signal_data(in, i);
-    plan.execute();           // Uses pre-computed optimal algorithm
-    process_fft_result(out);
+// Load I/Q data
+for (int i = 0; i < N; ++i) {
+    in[i][0] = iq_tensor[0, i];  // I -> real
+    in[i][1] = iq_tensor[1, i];  // Q -> imag
 }
 
-// 4. Cleanup
+// Create plan once, execute many times
+auto plan = fft::PlanFactory::create_1d(N, in, out, FFTW_FORWARD, FFTW_MEASURE);
+plan.execute();
+
+// Extract power spectrum for CNN
+double power[N];
+fft::compute_power_spectrum(out, power, N);
+
 fftw_free(in);
 fftw_free(out);
-// plan automatically destroyed via RAII
 ```
 
-### Sign Flags
-`FFTW_FORWARD` is a forward pass of fft
-`FFTW_BACKWARD` is for an inverse pass of fft
+### Batch Processing
 
-### Planning Flags
-
-| Flag | Planning Time | Execution Speed | Use Case |
-|------|---------------|-----------------|----------|
-| `FFTW_ESTIMATE` | ~0ms | Good | Development, testing, one-off FFTs |
-| `FFTW_MEASURE` | ~100ms-1s | Better | Production with repeated FFTs |
-| `FFTW_PATIENT` | ~1-10s | Best | Batch processing, known sizes |
-| `FFTW_EXHAUSTIVE` | ~10s-minutes | Optimal | Offline preprocessing, fixed sizes |
-
-**Recommendation for RF signal processing**: Use `FFTW_MEASURE` or `FFTW_PATIENT`. The planning overhead is amortized over thousands of signal FFTs.
-
-### Batch Processing (Rank-2 Tensors)
-
-For processing multiple signals stored in a rank-2 tensor `[num_signals × signal_length]`, use `create_many_c2c()` instead of creating multiple 1D plans:
+For processing multiple I/Q signals at once:
 
 ```cpp
-// Process batch of signals with a single plan
-constexpr int N = 1024;        // Signal length
-constexpr int batch = 100;     // Number of signals
+constexpr int N = 128;
+constexpr int batch = 100;
 
 auto* in = static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * N * batch));
 auto* out = static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * N * batch));
 
-// Copy tensor data to complex array
-for (size_t row = 0; row < batch; ++row) {
-    for (size_t col = 0; col < N; ++col) {
-        in[row * N + col][0] = tensor[row, col];  // real
-        in[row * N + col][1] = 0.0;                // imag
+// Load each I/Q tensor into the flat array
+for (int s = 0; s < batch; ++s) {
+    for (int i = 0; i < N; ++i) {
+        in[s * N + i][0] = signals[s][0, i];  // I
+        in[s * N + i][1] = signals[s][1, i];  // Q
     }
 }
 
-// Create batch plan
 int n_dims[] = {N};
-auto plan = fft::PlanFactory::create_many_c2c(
-    1,              // rank: 1D transforms
-    n_dims,         // transform size
-    batch,          // number of transforms
-    in, nullptr, 1, N,   // input: stride=1, dist=N (row-major)
-    out, nullptr, 1, N,  // output: same layout
-    FFTW_FORWARD,
-    FFTW_MEASURE
+auto plan = fft::PlanFactory::create_many(
+    1, n_dims, batch,
+    in, nullptr, 1, N,
+    out, nullptr, 1, N,
+    FFTW_FORWARD, FFTW_MEASURE
 );
 
-plan.execute();  // Computes all FFTs in one call
+plan.execute();  // All FFTs in one call
 ```
 
-**Why batch is faster**:
-- Single function call overhead vs N calls
-- Better cache utilization
-- FFTW can apply cross-signal optimizations
+## Planning Flags
 
-### Wisdom (Persistent Plan Optimization)
+| Flag | Planning Time | Execution Speed | Use Case |
+|------|---------------|-----------------|----------|
+| `FFTW_ESTIMATE` | ~0ms | Good | Development and testing |
+| `FFTW_MEASURE` | ~100ms-1s | Better | Production (plan once, execute many) |
+| `FFTW_PATIENT` | ~1-10s | Best | Batch processing, known sizes |
 
-FFTW "wisdom" stores the results of `FFTW_MEASURE` planning. Save it to avoid re-benchmarking on every startup:
+Use `FFTW_FORWARD` for forward FFT, `FFTW_BACKWARD` for inverse.
+
+## Wisdom
+
+Save/load plan optimizations to avoid re-benchmarking on startup:
 
 ```cpp
-// At startup: load previous optimizations
-fft::load_wisdom("fftw_wisdom.dat");
-
-// Create plans with FFTW_MEASURE (uses cached wisdom if available)
-auto plan = fft::PlanFactory::create_1d_c2c(N, in, out, FFTW_FORWARD, FFTW_MEASURE);
-
-// At shutdown: save optimizations for next run
-fft::save_wisdom("fftw_wisdom.dat");
+fft::load_wisdom("fftw_wisdom.dat");    // load at startup
+auto plan = fft::PlanFactory::create_1d(N, in, out, FFTW_FORWARD, FFTW_MEASURE);
+fft::save_wisdom("fftw_wisdom.dat");    // save at shutdown
 ```
 
-**Tip**: Wisdom is architecture-specific. Don't share wisdom files across different CPUs.
+Wisdom is architecture-specific — don't share across different CPUs.
 
-### Memory Alignment
-
-FFTW performs best with SIMD-aligned memory:
-
-```cpp
-// GOOD: Use fftw_malloc (automatically aligned)
-auto* data = static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * N));
-// ... use data ...
-fftw_free(data);
-
-// ACCEPTABLE: Ensure 32-byte alignment for AVX
-alignas(32) double data[N * 2];  // Interleaved real/imag
-
-// BAD: Unaligned heap allocation
-double* data = new double[N * 2];  // May not be aligned
-```
-
-### Integration with TensorBase
-
-The `TensorBase::data()` method returns a contiguous pointer suitable for FFTW:
-
-```cpp
-using SignalTensor = TensorBase<double, std::extents<size_t, NUM_SIGNALS, SIGNAL_LENGTH>>;
-SignalTensor signals;
-
-// Access raw data for FFTW
-double* raw = signals.data();
-
-// Note: For complex FFTs, you need to copy to fftw_complex arrays
-// or use real-to-complex transforms
-```
-
-### Power Spectrum for Feature Extraction
-
-For RF signal classification, the power spectrum `|FFT(x)|²` is often more useful than raw FFT coefficients:
-
-```cpp
-auto plan = fft::PlanFactory::create_1d_c2c(N, in, out, FFTW_FORWARD, FFTW_MEASURE);
-plan.execute();
-
-// Compute power spectrum for ML features
-double power[N];
-fft::compute_power_spectrum(out, power, N);
-
-// power[] now contains |real² + imag²| for each frequency bin
-```
-
-## API Reference
+## API
 
 ### FFTPlan
 
-RAII wrapper for `fftw_plan`. Automatically destroys the plan on destruction.
+Wrapper for `fftw_plan`. Automatically destroyed on scope exit.
 
-- `execute()` - Execute the plan with the arrays used during creation
-- `execute_dft(in, out)` - Execute with different (same-sized) arrays
-- `valid()` - Check if plan was successfully created
+- `execute()` — run FFT with the arrays used during plan creation
+- `execute_dft(in, out)` — run with different arrays (same size/alignment)
+- `valid()` — check if plan was created successfully
 
 ### PlanFactory
 
-Static factory methods for creating FFT plans:
-
-- `create_1d_c2c(n, in, out, sign, flags)` - 1D complex-to-complex
-- `create_1d_r2c(n, in, out, flags)` - 1D real-to-complex
-- `create_many_c2c(...)` - Batch 1D complex-to-complex
-- `create_many_r2c(...)` - Batch 1D real-to-complex
+- `create_1d(n, in, out, sign, flags)` — single 1D FFT
+- `create_many(rank, n, howmany, ...)` — batch 1D FFT for multiple signals
 
 ### Utilities
 
-- `load_wisdom(filename)` - Load cached plan optimizations
-- `save_wisdom(filename)` - Save plan optimizations
-- `compute_power_spectrum(fft_out, power_out, size)` - |FFT|²
-- `compute_magnitude(fft_out, mag_out, size)` - |FFT|
+- `compute_power_spectrum(fft_out, power_out, size)` — |FFT|^2
+- `compute_magnitude(fft_out, mag_out, size)` — |FFT|
+- `load_wisdom(filename)` / `save_wisdom(filename)` — persistent plan cache
 
-## Cross-Compilation (RISC-V)
+## Note on RISC-V
 
-FFTW is currently disabled for RISC-V cross-compilation. To enable:
+Pretty sure FFTW is unoptimized on RISC-V due to it having SIMD optimizations primarily targeted at x86 / ARM. Could be wrong though but if it is the case, we prob have to write our own fft (if fft is even worth)
 
-1. Build FFTW for RISC-V target
-2. Set `FFTW_ROOT` to the installation directory
-3. Modify CMakeLists.txt to use `find_library` with the cross-compiled library
-
-This is tracked as future work for the embedded deployment.
