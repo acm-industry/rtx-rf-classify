@@ -140,7 +140,7 @@ public:
         return data_.data_handle()[idx];
     }
 
-    constexpr std::size_t size() const noexcept { return size; }
+    constexpr std::size_t total_size() const noexcept { return size; }
 
 private:
     void allocate_and_copy(const T* src) {
