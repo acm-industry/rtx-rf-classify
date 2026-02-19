@@ -1,8 +1,9 @@
-// Compile-time backend selection.
-// Pass -DUSE_HIGHWAY to use the Highway SIMD backend.
-// Without it, the plain scalar fallback is compiled.
+// Compile-time backend selection (priority: BLAS > Highway > Sequential).
+// Pass -DUSE_BLAS for OpenBLAS, -DUSE_HIGHWAY for SIMD, or neither for scalar fallback.
 
-#ifdef USE_HIGHWAY
+#if defined(USE_BLAS)
+#include "impl/vector_blas.cpp"
+#elif defined(USE_HIGHWAY)
 #include "impl/vector_hwy.cpp"
 #else
 #include "impl/vector_seq.cpp"

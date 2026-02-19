@@ -4,23 +4,20 @@
 #include <cstddef>
 
 /*
-    Purpose: Vector operations interface supporting both scalar and SIMD backends.
+    Purpose: Vector operations interface supporting scalar, SIMD, and BLAS backends.
 
-    Usage: Include this header and link against the corresponding implementation file. 
-    Make sure to have Highway installed, and set include path for Highway if using SIMD.
-        Scalar: g++ -std=c++17 -o my_program my_program.cpp vector_ops.cpp
-        SIMD (Highway): g++ -std=c++17 -DUSE_HIGHWAY -o my_program my_program.cpp vector_ops.cpp -I "/path/to/highway"
+    Backend selection (compile-time, highest priority first):
+        1. BLAS (OpenBLAS):  -DUSE_BLAS    — delegates matmul/gemv/dot to CBLAS routines
+        2. Highway SIMD:     -DUSE_HIGHWAY — portable SIMD via Google Highway
+        3. Sequential:       (default)     — plain scalar loops
 
-    Notes: 
-        The implementation file selects the backend at compile time based on the USE_HIGHWAY macro.
-        Compile with -DUSE_HIGHWAY to use the Highway SIMD backend.
-        Without it, a sequential implementation will be used.
+    Usage: Include this header and link against the corresponding implementation file.
+        Scalar:   g++ -std=c++17 -o my_program my_program.cpp vector_ops.cpp
+        Highway:  g++ -std=c++17 -DUSE_HIGHWAY -o my_program my_program.cpp vector_ops.cpp -I "/path/to/highway" -lhwy
+        BLAS:     g++ -std=c++17 -DUSE_BLAS -o my_program my_program.cpp vector_ops.cpp -I "/path/to/openblas/include" -lopenblas
 
     Highway Installation: https://google.github.io/highway/en/master/README.html#installation
-    Not really sure about Windows/Linux install instructions.
         Mac: brew install highway
-        Linux: ?
-        Windows: ?
 */
 
 namespace vec {

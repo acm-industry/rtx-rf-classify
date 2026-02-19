@@ -10,3 +10,6 @@ set(RISCV_MABI  "lp64d")
 set(CMAKE_C_FLAGS_INIT   "-march=${RISCV_MARCH} -mabi=${RISCV_MABI}")
 set(CMAKE_CXX_FLAGS_INIT "-march=${RISCV_MARCH} -mabi=${RISCV_MABI}")
 
+# Cross-compiled OpenBLAS (built in Docker image)
+set(OPENBLAS_ROOT "/opt/openblas-riscv" CACHE PATH "Path to cross-compiled OpenBLAS")
+
