@@ -10,4 +10,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+# Cross-compile OpenBLAS for RISC-V (static only, no Fortran/LAPACK needed)
+RUN git clone --depth 1 --branch v0.3.27 \
+      https://github.com/OpenMathLib/OpenBLAS.git /tmp/openblas && \
+    cd /tmp/openblas && \
+    make NOFORTRAN=1 NO_LAPACK=1 NO_SHARED=1 \
+         TARGET=RISCV64_GENERIC \
+         CC=riscv64-linux-gnu-gcc HOSTCC=gcc \
+         PREFIX=/opt/openblas-riscv \
+         -j$(nproc) && \
+    make NOFORTRAN=1 NO_LAPACK=1 NO_SHARED=1 \
+         TARGET=RISCV64_GENERIC \
+         CC=riscv64-linux-gnu-gcc HOSTCC=gcc \
+         PREFIX=/opt/openblas-riscv \
+         install && \
+    rm -rf /tmp/openblas
+
 WORKDIR /work
