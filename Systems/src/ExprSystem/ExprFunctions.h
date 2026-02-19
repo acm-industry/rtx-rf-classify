@@ -1,6 +1,8 @@
 #ifndef __EXPR_FUNCTIONS_H__
 #define __EXPR_FUNCTIONS_H__
 
+#include <algorithm>
+
 #include "Expression.h"
 
 struct Neg {
@@ -129,7 +131,7 @@ constexpr auto sigmoid(E e) {
 
 struct ReLU {
     template <class T>
-    constexpr T operator()( T x ) const { return std::max(0, x); }
+    constexpr T operator()( T x ) const { return std::max(T{0}, x); }
 };
 
 template <Expression E>
