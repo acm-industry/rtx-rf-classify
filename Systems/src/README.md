@@ -29,20 +29,23 @@ Contains a `MemoryBuffer` class for bump-allocating memory from a dedicated memo
 2. `MemoryBuffer(std::span<std::byte>)`: The memory buffer will not assume ownership of the memory, but will instead just manage it. This should primarily be used if static or stack memory is usable. Heap memory should use constructor 1. <br>
 **Note**: The copy and move constructor/assignment methods have all been deleted. This is to ensure that the MemoryBuffer instance is bounded to the scope it is created in. This helps avoid unintended moving of large amounts of data. 
 The class also exposes: <br>
-- `Allocator<T> get_allocator<T>()`: Returns an instance of `Allocator<T>`. Most if not all interactions with the buffer should go through an Allocator.
-- `class Allocator<T>`: This is a STL-container compatible allocator for obtaining memory from the `MemoryBuffer`. It follows the named requirements for an Allocator.
+- `Allocator<T> get_allocator<T, size_t>()`: Returns an instance of `Allocator<T, size_t>`. Most if not all interactions with the buffer should go through an Allocator. The `size_t` parameter dictates alignment size, allowing for optimal SIMD loads.
+- `class Allocator<T, size_t>`: This is a STL-container compatible allocator for obtaining memory from the `MemoryBuffer`. It follows the named requirements for an Allocator.
 
 
 - `memorybuffer.cpp`: Some impls for some of the files in `memorybuffer.h`.
 
 - `tensor.h`: Header file for the `TensorBase` class:
-A compile-time-sized, mdspan-backed tensor type. Template parameters are `T` (floating-point type), `E` (fixed extents), and `A` (allocator, defaults to `std::allocator<T>`). All dimension sizes are encoded in the type via `std::extents`, enabling zero-overhead multi-dimensional access.
-  - `TensorBase(allocator_type)`: Allocates and zero-initializes storage.
-  - `TensorBase(const T* model_weights, allocator_type)`: Allocates and copies from a weight buffer.
-  - `view()` -> `std::mdspan<T, E>&`: Returns the underlying mdspan view. Used to pass into `blas::gemm`, `blas::gemv`, and `blas::dot`.
-  - `operator[](Idx... idx)` -> `T&`: Multi-dimensional element access.
-  - `flat(size_t idx)` -> `T&`: Flat 1D element access over the contiguous storage.
-  - `data()` -> `T*`: Raw pointer to the underlying memory.
+A TensorBase class which is effectively a custom view onto a pointer. It allows for several niceties:
+  - View semantics: TensorBase does not assume ownership of it's own data. Therefore, we can do many things recursively. For example, we
+  `TensorBase<T, std::extents<size_t, 4, 4>>(data)[0]` will return a `TensorBase<T, std::extents<size_t, 4>`. You can also use `flat_view`
+  to get a `TensorBase` with rank 1, but mainting the same size (akin to numpy `flatten`). This also extends to the iterator type; for example,
+  the same 4x4 tensor above will return a rank-1, length 4 tensor when iterating over with a for-each loop. This is optimized too; on a rank-N tensor,
+  an N for loop should (ideally) have similar or exactly the same performance as direct loops (`(i = 0; i < ...)`).
+  - Lazy evaluation compatibility: TensorBase is automatically compatible with the expression system. 
+  - Compile time shape assurance; the Tensor will always ensure rank > 0 and that its total size is preserved under operations that require it
+  like a move or copy between Tensors of different shapes. 
+Also provides `DynTensor`, which is a subclass of TensorBase that manages its own memory. An allocator is usable to defer allocation to a `MemoryBuffer`.
 
 - `blas_ops.h`: Type-safe, mdspan-aware BLAS wrappers with compile-time dimension checks.
 Provides `gemm`, `gemv`, and `dot` operations that accept `std::mdspan` with fixed extents, template on the floating-point type (`float`/`double`), and dispatch to the appropriate CBLAS routine. Dimension compatibility is enforced via `static_assert`. All operations assume row-major layout (`CblasRowMajor`), matching `TensorBase`'s default `std::layout_right`.

@@ -6,7 +6,8 @@
 #include <concepts>
 #include <algorithm>
 #include <cassert>
-#include "memorybuffer.h"
+#include <string>
+#include "ExprSystem/Expression.h"
 
 template<class E>
 concept FixedExtent =
@@ -58,7 +59,7 @@ struct remove_extents<0, std::extents<IndexType, Extents...>> {
 
 // recursive case
 
-template<std::size_t N, class IndexType, std::size_t First, std::size_t... Rest> requires ( N <= sizeof...(Rest) + 1 )
+template<std::size_t N, class IndexType, std::size_t First, std::size_t... Rest> requires ( N <= sizeof...(Rest) + 1 && N != 0 )
 struct remove_extents<N, std::extents<IndexType, First, Rest...>> {
     using type = typename remove_extents<N - 1, std::extents<IndexType, Rest...>>::type;
 };
@@ -176,7 +177,7 @@ public:
         ((offset += static_cast<std::size_t>(idx) * strides[i++]), ...);
 
 
-        return std::span< T, return_type::static_size >(data_, return_type::static_size);
+        return std::span< T, return_type::static_size >(data_ + offset, return_type::static_size);
     }
 
     template <class... Idxs> requires ( sizeof...(Idxs) < rank && (std::integral<std::remove_cvref_t<Idxs>> && ...) )
@@ -189,7 +190,7 @@ public:
         ((offset += static_cast<std::size_t>(idx) * strides[i++]), ...);
 
 
-        return std::span< const T, return_type::static_size >(data_, return_type::static_size);
+        return std::span< const T, return_type::static_size >(data_ + offset, return_type::static_size);
     }
 
     class iterator {
@@ -207,7 +208,7 @@ public:
             if constexpr (rank == 1) return view[idx];
             else {
                 using return_type = TensorBase<T, remove_extents_t<1, E>>;
-                return std::span<T, return_type::static_size>(view * strides[0], return_type::static_size);
+                return return_type(std::span<T, return_type::static_size>(view + idx * strides[0], return_type::static_size));
             }
         }
 
@@ -240,6 +241,33 @@ public:
 
     constexpr iterator end() noexcept {
         return iterator{ data_, E::static_extent(0) };
+    }
+
+    std::string prettyPrint(std::size_t indent = 0) const {
+        auto indent_str = [](std::size_t n) {
+            return std::string(n, ' ');
+        };
+
+        if constexpr (rank == 1) {
+            std::string out = "[";
+            for (std::size_t i = 0; i < E::static_extent(0); ++i) {
+                if (i) out += ", ";
+                out += std::to_string((*this)[i]);
+            }
+            out += "]";
+            return out;
+        } else {
+            std::string out = "[\n";
+            for (std::size_t i = 0; i < E::static_extent(0); ++i) {
+                out += indent_str(indent + 2);
+                out += (*this)[i].prettyPrint(indent + 2);
+                if (i + 1 < E::static_extent(0)) out += ",";
+                out += "\n";
+            }
+            out += indent_str(indent);
+            out += "]";
+            return out;
+        }
     }
     
 };
@@ -290,6 +318,18 @@ public:
     template <FixedExtent OtherExtent, Allocator<T> OtherA> requires ( Base::static_size == TensorBase<T, OtherExtent>::static_size )
     constexpr DynTensor& operator=(const DynTensor<T, OtherExtent, OtherA>& other) {
         return static_cast<DynTensor&>(Base::operator=( other ));
+    }
+
+    template <Expression Expr> requires ( Expr::iter_size() == Base::static_size )
+    constexpr DynTensor(const Expr& expr, const A& allocator = A()) noexcept : Base(), alloc_(allocator) {
+        this->data_ = alloc_.allocate(Base::static_size);
+        for (size_t i = 0; i < Base::static_size; i++) this->data_[i] = expr.access(i);
+    }
+
+    template <Expression Expr> requires ( Expr::iter_size() == Base::static_size )
+    constexpr DynTensor& operator=(const Expr& expr) {
+        for (size_t i = 0; i < Base::static_size; i++) this->data_[i] = expr.access(i);
+        return *this;
     }
 
     template <FixedExtent OtherExtent> requires ( Base::static_size == TensorBase<T, OtherExtent>::static_size )
