@@ -1,6 +1,11 @@
+#ifndef __MEMORY_BUFFER_H__
+#define __MEMORY_BUFFER_H__
+
 #include <cstddef>
 #include <functional>
 #include <span>
+#include <cstdlib>
+#include <memory>
 
 class MemoryBuffer {
    private:
@@ -9,24 +14,43 @@ class MemoryBuffer {
     std::size_t offset;
     bool owns;
 
-    void* alloc(std::size_t num);
+    template <class T, std::size_t Alignment = alignof(T)> requires ( Alignment >= alignof(T) && ( ( Alignment & (Alignment - 1) ) == 0 ) )
+    T* alloc(std::size_t num) {
+        if (num == 0) throw std::bad_alloc();
+    
+        std::size_t bytes = sizeof(T) * num;
+        std::byte* current = buf + offset;
+        std::size_t space = capacity - offset;
+        void* aligned_ptr = current;
+
+        if ( !std::align( Alignment, bytes, aligned_ptr, space ) ) throw std::bad_alloc();
+
+        std::byte* aligned_byte_ptr = static_cast<std::byte*>(aligned_ptr);
+        offset = ( aligned_byte_ptr - buf ) + bytes;
+
+        return reinterpret_cast<T*>(aligned_ptr);
+    }
 
    public:
     MemoryBuffer(std::size_t capacity)
-        : buf(new std::byte[capacity]),
+        : buf( (std::byte*)std::aligned_alloc(32, capacity) ),
           capacity(capacity),
           offset(0),
           owns(true) {}
+
     MemoryBuffer(std::span<std::byte> ext)
         : buf(ext.data()), capacity(ext.size()), offset(0), owns(false) {}
-    ~MemoryBuffer();
+
+    ~MemoryBuffer() {
+        if (owns) std::free(buf);
+    }
 
     MemoryBuffer(const MemoryBuffer&) = delete;
     MemoryBuffer& operator=(const MemoryBuffer&) = delete;
     MemoryBuffer(MemoryBuffer&& other) = delete;
     MemoryBuffer& operator=(MemoryBuffer&& other) = delete;
 
-    template <class T>
+    template <class T, std::size_t Alignment = alignof(T)>
     class Allocator {
        private:
         friend class MemoryBuffer;
@@ -40,15 +64,17 @@ class MemoryBuffer {
         using propagate_on_container_copy_assignment = std::true_type;
         using propagate_on_container_move_assignment = std::true_type;
         using propagate_on_container_swap = std::true_type;
+        using is_always_equal = std::false_type;
 
-        template <class U>
-        Allocator(const Allocator<U>& other) : buffer(other.buffer.get()) {}
+        template <class U, std::size_t UAlignment = Alignment>
+        Allocator(const Allocator<U, UAlignment>& other) : buffer(other.buffer.get()) {}
+        template<class U, std::size_t UAlignment = Alignment> struct rebind { using other = Allocator<U, UAlignment>; };
 
         T* allocate(std::size_t n) {
-            return static_cast<T*>(buffer.get().alloc(n * sizeof(T)));
+            return buffer.get().alloc<T, Alignment>(n);
         }
 
-        void deallocate(T* p, std::size_t n) {}  // no-op for bump allocator
+        void deallocate([[maybe_unused]] T* p, [[maybe_unused]] std::size_t n) {}  // no-op for bump allocator
 
         bool operator==(const Allocator& other) const {
             return &buffer.get() == &other.buffer.get();
@@ -59,8 +85,10 @@ class MemoryBuffer {
         }
     };
 
-    template <class T>
-    Allocator<T> get_allocator() {
-        return Allocator<T>(*this);
+    template <class T, std::size_t Alignment = alignof(T)>
+    Allocator<T, Alignment> get_allocator() {
+        return Allocator<T, Alignment>(*this);
     }
 };
+
+#endif

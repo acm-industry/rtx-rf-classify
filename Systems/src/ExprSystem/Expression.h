@@ -47,7 +47,6 @@ struct ScalarExpr {
 template <class Op, Expression... Es> requires (
     sizeof...(Es) > 0 && // More than one argument
     (std::same_as<typename Es::value_type, typename std::tuple_element<0, std::tuple<Es...>>::type::value_type> && ...) && // All have the same OperandType
-    ( (Es::extents == std::tuple_element<0, std::tuple<Es...>>::type::extents ) && ... ) && // All have the same extents / shape
     ( (Es::iter_size() == std::tuple_element<0, std::tuple<Es...>>::type::iter_size() ) && ... ) && // All have the same iteration size 
     Operation<Op, typename std::tuple_element<0, std::tuple<Es...>>::type::value_type, sizeof...(Es)> // Verify Op is an Operation
 )
@@ -70,6 +69,45 @@ public:
         ); 
     }
     
+    class iterator {
+        OpExpr const* owner;
+        size_t i;
+
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = OpExpr::value_type;
+        using difference_type = std::ptrdiff_t;
+        using reference = value_type; 
+        using pointer = void;
+
+        constexpr iterator(OpExpr const* o = nullptr, size_t idx = 0) : owner(o), i(idx) {}
+
+        constexpr reference operator*() const {
+            return owner->access(i);
+        }
+
+        constexpr iterator& operator++() {
+            ++i;
+            return *this;
+        }
+
+        constexpr iterator operator++(int) {
+            auto tmp = *this;
+            ++*this;
+            return tmp;
+        }
+
+        friend constexpr bool operator==(const iterator& a, const iterator& b) {
+            return a.owner == b.owner && a.i == b.i;
+        }
+
+        friend constexpr bool operator!=(const iterator& a, const iterator& b) {
+            return !(a == b);
+        }
+    };
+
+    constexpr iterator begin() const { return {this, 0}; }
+    constexpr iterator end() const { return {this, iter_size()}; }
 
 };
 

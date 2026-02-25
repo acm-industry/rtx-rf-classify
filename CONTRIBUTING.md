@@ -6,6 +6,7 @@
 - Try to keep things self-documenting; use good naming of variables. You should only need comments if and only if the underlying task is complex/non-obvious. 
 - Keep code patterns (i.e., OOP, functional, multi-paradigm, ...) along with name patterns consistent in a file. This should be noted in the doccumentation (more on this below).
 - Use CMakeLists for C++ code.
+- Write tests whenever you commit code. This should live within the `src/tests` folder and be easily runnable by swapping it with main.
 
 ### Documentation
 - Each folder should have an associated `.md` file containing documentation for each function.

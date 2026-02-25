@@ -2,13 +2,7 @@
 #define __BROADCAST_H__
 
 #include <cstddef>
-#if __has_include(<mdspan>)
-#include <mdspan>
-#elif __has_include(<experimental/mdspan>)
 #include <experimental/mdspan>
-#else
-#error "mdspan header not found"
-#endif
 
 template <class E, size_t I>
 constexpr size_t static_extent_or_one() {
