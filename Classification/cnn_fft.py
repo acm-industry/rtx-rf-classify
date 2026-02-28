@@ -20,7 +20,7 @@ def hybrid_preprocess(X_train, X_test, window='hann', log_normalize='global'):
     """
     Build 3-channel hybrid input: [I, Q, log_power_spectrum].
     X_train, X_test: (N, 2, 128). Returns (N, 3, 128) float32 each.
-    log_normalize: 'global' = use train mean/std for both (recommended); 'per_sample'; None.
+    log_normalize: 'global' = use train mean/std for both (recommended); None to skip.
     """
     def _log_power(X, win):
         X = np.asarray(X, dtype=np.float64)
@@ -42,12 +42,6 @@ def hybrid_preprocess(X_train, X_test, window='hann', log_normalize='global'):
         if std > 0:
             log_power_train = (log_power_train - mean) / std
             log_power_test = (log_power_test - mean) / std
-    elif log_normalize == 'per_sample':
-        for arr in (log_power_train, log_power_test):
-            m = arr.mean(axis=1, keepdims=True)
-            s = arr.std(axis=1, keepdims=True)
-            s = np.where(s > 0, s, 1.0)
-            arr[:] = (arr - m) / s
 
     # Channels: I, Q, log_power
     I_train = np.asarray(X_train[:, 0, :], dtype=np.float32)
