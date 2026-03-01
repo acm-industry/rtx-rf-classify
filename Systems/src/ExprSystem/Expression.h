@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <concepts>
 #include <tuple>
-#include "Broadcast.h"
 
 template <class E>
 concept Expression = requires( const E& e, std::size_t idx ) {
@@ -22,31 +21,12 @@ concept Operation =
         { std::apply( callable, arguments ) } -> std::same_as<OperandType>;
     };
 
-template <class OperandType>
-struct ScalarExpr {
-    static constexpr auto extents = std::extents<size_t>();
-    using value_type = OperandType;
 
-    static constexpr size_t iter_size() { return 1; }
-
-    OperandType value;
-
-    constexpr ScalarExpr( OperandType val ) : value(val) {}
-    constexpr ScalarExpr() = default;
-
-    constexpr const value_type& access(size_t...) const noexcept {
-        return value;
-    }
-    
-    constexpr value_type& access(size_t...) noexcept {
-        return value;
-    }
-};
 
 
 template <class Op, Expression... Es> requires (
     sizeof...(Es) > 0 && // More than one argument
-    (std::same_as<typename Es::value_type, typename std::tuple_element<0, std::tuple<Es...>>::type::value_type> && ...) && // All have the same OperandType
+    (std::convertible_to<typename Es::value_type, typename std::tuple_element<0, std::tuple<Es...>>::type::value_type> && ...) && // All have the same OperandType
     ( (Es::iter_size() == std::tuple_element<0, std::tuple<Es...>>::type::iter_size() ) && ... ) && // All have the same iteration size 
     Operation<Op, typename std::tuple_element<0, std::tuple<Es...>>::type::value_type, sizeof...(Es)> // Verify Op is an Operation
 )
@@ -119,7 +99,7 @@ constexpr std::size_t total_size(Extents) {
 }
 
 template <Expression E, Expression Out> requires (
-    std::same_as<typename E::value_type, typename Out::value_type> &&
+    std::convertible_to<typename E::value_type, typename Out::value_type> &&
     E::extents == Out::extents 
 )
 constexpr void in_place_eval( const E& expr, Out& out ) {

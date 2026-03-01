@@ -45,6 +45,10 @@ class MemoryBuffer {
         if (owns) std::free(buf);
     }
 
+    void reset() {
+        offset = 0;
+    }
+
     MemoryBuffer(const MemoryBuffer&) = delete;
     MemoryBuffer& operator=(const MemoryBuffer&) = delete;
     MemoryBuffer(MemoryBuffer&& other) = delete;

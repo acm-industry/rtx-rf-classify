@@ -79,6 +79,7 @@ template<class T, FixedExtent E> requires ( E::rank() > 0 )
 class TensorBase {
 public:
     using value_type = T;
+    using element_type = T;
     using extents_type = E;
     using index_type = typename E::index_type;
 
@@ -89,6 +90,8 @@ public:
     static constexpr std::size_t iter_size() noexcept { return static_size; }
 
     static constexpr std::array<std::size_t, rank> strides = compute_strides<E>();
+
+    static constexpr std::size_t static_extent(std::size_t i) { return E::static_extent(i); }
 
 protected:
     T* data_;

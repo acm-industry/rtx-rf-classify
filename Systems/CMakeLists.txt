@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
-option(USE_BLAS  "Use BLAS (OpenBLAS preferred)" OFF)
+option(USE_BLAS  "Use BLAS (OpenBLAS preferred)" ON)
 option(USE_FFTW  "Use FFTW3" OFF)
 option(USE_HWY   "Use Google Highway SIMD" OFF)
 
@@ -55,9 +55,19 @@ if(USE_FFTW)
   endif()
 endif()
 
+file(GLOB WEIGHT_OBJECTS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/binaries/*.o")
+
+if(NOT WEIGHT_OBJECTS)
+  message(FATAL_ERROR
+    "No weight object files found in ${CMAKE_SOURCE_DIR}/src/binaries. "
+    "Generate them first or fix WEIGHT_OBJECTS path."
+  )
+endif()
+
 add_executable(classify
   src/main.cpp
   src/vector/vector_ops.cpp
+  ${WEIGHT_OBJECTS}
 )
 
 target_include_directories(classify PRIVATE
@@ -85,7 +95,7 @@ if(MSVC)
   target_compile_options(classify PRIVATE /W4)
 else()
   target_compile_options(classify PRIVATE
-    -O3 -Wall -Wextra -Wpedantic
+    -O3 -Wall -Wextra -Wpedantic -march=native -mtune=native
   )
 
   if(CMAKE_CROSSCOMPILING)

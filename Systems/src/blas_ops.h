@@ -1,7 +1,7 @@
 #ifndef __BLAS_OPS_H__
 #define __BLAS_OPS_H__
 
-#include <mdspan>
+#include <experimental/mdspan>
 #include <concepts>
 #include <type_traits>
 #include <cblas.h>
@@ -26,7 +26,7 @@ template<typename M>
 concept Matrix2D = requires {
     typename M::element_type;
     requires std::floating_point<typename M::element_type>;
-    requires M::rank() == 2;
+    requires M::rank == 2;
     requires M::static_extent(0) != std::dynamic_extent;
     requires M::static_extent(1) != std::dynamic_extent;
 };
@@ -35,7 +35,7 @@ template<typename V>
 concept Vector1D = requires {
     typename V::element_type;
     requires std::floating_point<typename V::element_type>;
-    requires V::rank() == 1;
+    requires V::rank == 1;
     requires V::static_extent(0) != std::dynamic_extent;
 };
 
@@ -45,7 +45,7 @@ template<Matrix2D MA, Matrix2D MB, Matrix2D MC>
     requires std::same_as<typename MA::element_type, typename MB::element_type> &&
              std::same_as<typename MA::element_type, typename MC::element_type>
 void gemm(const MA& a, const MB& b, MC& c) {
-    using T = typename MA::element_type;
+    using T = std::remove_cv_t<typename MA::element_type>;
 
     static constexpr auto M = MA::static_extent(0);
     static constexpr auto K = MA::static_extent(1);
@@ -59,18 +59,18 @@ void gemm(const MA& a, const MB& b, MC& c) {
         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                     static_cast<int>(M), static_cast<int>(N), static_cast<int>(K),
                     1.0f,
-                    a.data_handle(), static_cast<int>(K),
-                    b.data_handle(), static_cast<int>(N),
+                    a.data(), static_cast<int>(K),
+                    b.data(), static_cast<int>(N),
                     0.0f,
-                    c.data_handle(), static_cast<int>(N));
+                    c.data(), static_cast<int>(N));
     } else if constexpr (std::is_same_v<T, double>) {
         cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                     static_cast<int>(M), static_cast<int>(N), static_cast<int>(K),
                     1.0,
-                    a.data_handle(), static_cast<int>(K),
-                    b.data_handle(), static_cast<int>(N),
+                    a.data(), static_cast<int>(K),
+                    b.data(), static_cast<int>(N),
                     0.0,
-                    c.data_handle(), static_cast<int>(N));
+                    c.data(), static_cast<int>(N));
     } else {
         static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>,
             "gemm: only float and double are supported by CBLAS");
@@ -80,10 +80,10 @@ void gemm(const MA& a, const MB& b, MC& c) {
 // y = A * x
 // A is M x N, x is N, y is M (row-major)
 template<Matrix2D MA, Vector1D VX, Vector1D VY>
-    requires std::same_as<typename MA::element_type, typename VX::element_type> &&
-             std::same_as<typename MA::element_type, typename VY::element_type>
+    requires std::convertible_to<typename MA::element_type, typename VX::element_type> &&
+             std::convertible_to<typename MA::element_type, typename VY::element_type>
 void gemv(const MA& a, const VX& x, VY& y) {
-    using T = typename MA::element_type;
+    using T = std::remove_cv_t<typename MA::element_type>;
 
     static constexpr auto M = MA::static_extent(0);
     static constexpr auto N = MA::static_extent(1);
@@ -95,18 +95,18 @@ void gemv(const MA& a, const VX& x, VY& y) {
         cblas_sgemv(CblasRowMajor, CblasNoTrans,
                     static_cast<int>(M), static_cast<int>(N),
                     1.0f,
-                    a.data_handle(), static_cast<int>(N),
-                    x.data_handle(), 1,
+                    a.data(), static_cast<int>(N),
+                    x.data(), 1,
                     0.0f,
-                    y.data_handle(), 1);
+                    y.data(), 1);
     } else if constexpr (std::is_same_v<T, double>) {
         cblas_dgemv(CblasRowMajor, CblasNoTrans,
                     static_cast<int>(M), static_cast<int>(N),
                     1.0,
-                    a.data_handle(), static_cast<int>(N),
-                    x.data_handle(), 1,
+                    a.data(), static_cast<int>(N),
+                    x.data(), 1,
                     0.0,
-                    y.data_handle(), 1);
+                    y.data(), 1);
     } else {
         static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>,
             "gemv: only float and double are supported by CBLAS");
@@ -118,15 +118,15 @@ void gemv(const MA& a, const VX& x, VY& y) {
 template<Vector1D VA, Vector1D VB>
     requires std::same_as<typename VA::element_type, typename VB::element_type>
 auto dot(const VA& a, const VB& b) -> typename VA::element_type {
-    using T = typename VA::element_type;
+    using T = std::remove_cv_t<typename VA::element_type>;
 
     static constexpr auto N = VA::static_extent(0);
     static_assert(VB::static_extent(0) == N, "dot: vector lengths must match");
 
     if constexpr (std::is_same_v<T, float>) {
-        return cblas_sdot(static_cast<int>(N), a.data_handle(), 1, b.data_handle(), 1);
+        return cblas_sdot(static_cast<int>(N), a.data(), 1, b.data(), 1);
     } else if constexpr (std::is_same_v<T, double>) {
-        return cblas_ddot(static_cast<int>(N), a.data_handle(), 1, b.data_handle(), 1);
+        return cblas_ddot(static_cast<int>(N), a.data(), 1, b.data(), 1);
     } else {
         static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>,
             "dot: only float and double are supported by CBLAS");
