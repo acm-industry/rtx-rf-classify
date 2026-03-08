@@ -139,5 +139,16 @@ constexpr auto relu(E e) {
     return OpExpr<ReLU, E>{ std::move(e) };
 }
 
+struct Abs {
+    template <class T>
+    constexpr T operator()( T x ) const { return std::abs(x); }
+};
+
+template <Expression E>
+constexpr auto abs(E e) {
+    return OpExpr<Abs, E>{ std::move(e) };
+}
+
+
 
 #endif
