@@ -102,12 +102,53 @@ void test_custom_allocator() {
     TEST("Custom Allocator Others Zero", others_zero);
 }
 
+void test_r2c() {
+    using Extent = std::extents<size_t, 4>;
+    using RealT = float;
+    using CpxT = std::complex<float>;
+
+    DynTensor<RealT, Extent> in;
+    DynTensor<CpxT, fft::R2CExtent<Extent>> out;
+
+    for (size_t i = 0; i < 4; ++i) {
+        in.flat(i) = 1.0f;
+    }
+
+    FFTW_R2C<float, Extent> fft;
+    fft(in, out);
+
+    TEST("R2C DC Real", approx_equal(out.flat(0).real(), 4.0f));
+    TEST("R2C DC Imag", approx_equal(out.flat(0).imag(), 0.0f));
+    TEST("R2C AC", approx_equal(out.flat(1).real(), 0.0f));
+}
+
+void test_c2r() {
+    using OutExtent = std::extents<size_t, 4>;
+    using RealT = float;
+    using CpxT = std::complex<float>;
+
+    DynTensor<CpxT, fft::R2CExtent<OutExtent>> in;
+    DynTensor<RealT, OutExtent> out;
+
+    in.flat(0) = CpxT(4.0f, 0.0f);
+    in.flat(1) = CpxT(0.0f, 0.0f);
+    in.flat(2) = CpxT(0.0f, 0.0f);
+
+    FFTW_C2R<float, OutExtent> ifft;
+    ifft(in, out);
+
+    TEST("C2R DC", approx_equal(out.flat(0), 4.0f));
+    TEST("C2R AC", approx_equal(out.flat(1), 4.0f));
+}
+
 int main() {
     std::cout << "\n=== FFTW Wrapper Tests ===\n\n";
     
     test_basic_plan();
     test_eval_integration();
     test_custom_allocator();
+    test_r2c();
+    test_c2r();
     
     std::cout << "\n" << passed << "/" << total << " tests passed\n\n";
     return (passed == total) ? 0 : 1;
