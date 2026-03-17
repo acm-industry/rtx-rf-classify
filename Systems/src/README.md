@@ -4,18 +4,15 @@
 
 This directory contains the C++ source code for the Systems project. The code is designed to be compilable for both native architectures and RISC-V via cross-compilation.
 
-## RISC-V CI Pipeline Integration
+## RISC-V Vectorization Pipeline
 
-The source code in this directory is compiled for RISC-V architecture as part of the CI pipeline validation process. The pipeline:
+The source code in this directory is compiled for RISC-V architecture as part of the vectorization verification pipeline. The pipeline:
 
-1. **Cross-compiles** the source code using the RISC-V toolchain configured in `cmake/toolchains/riscv64-linux-gnu.cmake`
-2. **Links statically** (on non-MSVC platforms) to ensure the binary is self-contained
-3. **Tests execution** by running the compiled RISC-V binary using QEMU emulation
+1. **Cross-compiles** the source code using Clang with `-march=rv64gcv` targeting the RISC-V Vector extension
+2. **Verifies vectorization** by checking that the compiler emits RVV instructions in the assembly output
+3. **Tests correctness** by running the compiled RISC-V binary on Spike (the RISC-V ISA simulator)
 
-This ensures that the codebase is compatible with RISC-V architecture and can be successfully built and executed in RISC-V environments. The CI pipeline validates that:
-- The code compiles without errors for RISC-V
-- The binary executes correctly when emulated
-- No architecture-specific assumptions are made in the code
+The test kernels in `tests/test_rvv_kernels.cpp` mirror the project's real operations (vector add, dot product, matrix-vector multiply, fused multiply-add, conv1d, relu, maxpool, linear) and are used to validate that each operation is vectorized and produces correct results.
 
 ## Files
 The `test` folder contains tests for some of the applications below. These should go unused unless explicitly for testing.

@@ -24,6 +24,8 @@ echo "compiling const-data expression test to assembly..."
 ARCH="$(uname -m)"
 if [[ "${ARCH}" == "arm64" || "${ARCH}" == "aarch64" ]]; then
   SIMD_REGEX='fadd\.4s|fmul\.4s|fmla\.4s|faddp|fmadd'
+elif [[ "${ARCH}" == "riscv64" ]]; then
+  SIMD_REGEX='vsetvli|vsetivli|vle[0-9]+\.v|vse[0-9]+\.v|vfadd\.|vfmul\.|vfmadd\.|vfmacc\.'
 else
   SIMD_REGEX='vaddps|vmulps|addps|mulps'
 fi

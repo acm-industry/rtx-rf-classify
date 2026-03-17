@@ -1,0 +1,59 @@
+FROM ubuntu:24.04 AS base
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake ninja-build build-essential pkg-config \
+    gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
+    clang lld \
+    device-tree-compiler libboost-regex-dev libboost-system-dev \
+    autoconf automake autotools-dev \
+    ca-certificates \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Build Spike (riscv-isa-sim) from upstream ──
+# Upstream Spike has full RVV 1.0 support (contributed by the Ara project).
+RUN git clone --depth 1 https://github.com/riscv-software-src/riscv-isa-sim.git /tmp/spike && \
+    cd /tmp/spike && \
+    mkdir build && cd build && \
+    ../configure --prefix=/opt/riscv && \
+    make -j"$(nproc)" && \
+    make install && \
+    rm -rf /tmp/spike
+
+# ── Build proxy kernel (pk) ──
+# pk handles syscalls (printf, exit, etc.) when running binaries on Spike.
+# Built with the Linux cross-compiler in -nostdlib mode so configure can
+# create test executables without a full bare-metal sysroot.
+RUN git clone --depth 1 https://github.com/riscv-software-src/riscv-pk.git /tmp/pk && \
+    cd /tmp/pk && \
+    mkdir build && cd build && \
+    ../configure \
+      --prefix=/opt/riscv \
+      --host=riscv64-linux-gnu \
+      CC=riscv64-linux-gnu-gcc \
+      CFLAGS="-march=rv64gc -mabi=lp64d" && \
+    make -j"$(nproc)" && \
+    make install && \
+    rm -rf /tmp/pk
+
+# ── Cross-compile OpenBLAS for RISC-V (static, no Fortran/LAPACK) ──
+RUN git clone --depth 1 --branch v0.3.27 \
+      https://github.com/OpenMathLib/OpenBLAS.git /tmp/openblas && \
+    cd /tmp/openblas && \
+    make NOFORTRAN=1 NO_LAPACK=1 NO_SHARED=1 \
+         TARGET=RISCV64_GENERIC \
+         CC=riscv64-linux-gnu-gcc HOSTCC=gcc \
+         PREFIX=/opt/openblas-riscv \
+         -j"$(nproc)" && \
+    make NOFORTRAN=1 NO_LAPACK=1 NO_SHARED=1 \
+         TARGET=RISCV64_GENERIC \
+         CC=riscv64-linux-gnu-gcc HOSTCC=gcc \
+         PREFIX=/opt/openblas-riscv \
+         install && \
+    rm -rf /tmp/openblas
+
+ENV PATH="/opt/riscv/bin:${PATH}"
+
+WORKDIR /work

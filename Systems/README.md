@@ -2,32 +2,30 @@
 
 ## Purpose
 
-This directory contains the build system, source code, and tooling for cross-compiling and testing C++ code for RISC-V architecture.
+This directory contains the build system, source code, and tooling for cross-compiling and testing C++ code for RISC-V architecture with vector extension (RVV 1.0) support.
 
-## RISC-V CI Pipeline Overview
+## RISC-V Vectorization Pipeline Overview
 
-The RISC-V CI pipeline provides automated validation that the codebase can be successfully compiled for RISC-V 64-bit Linux and executed correctly. The pipeline uses Docker for isolation and QEMU for emulation, ensuring reproducible builds and tests across different host systems.
+The RISC-V pipeline validates that the compiler auto-vectorizes operations into RVV instructions and that the vectorized code produces correct results. The pipeline uses Docker for isolation and Spike (the RISC-V ISA simulator from the [Ara](https://github.com/pulp-platform/ara) ecosystem) for instruction-accurate simulation.
 
 ### Pipeline Components
 
-The CI pipeline consists of several integrated components:
-
-1. **Docker Environment** (`docker/`): Provides an isolated build environment with RISC-V cross-compilation tools and QEMU emulator
-2. **CMake Toolchain** (`cmake/toolchains/`): Configures CMake to cross-compile for RISC-V architecture
-3. **Build Script** (`scripts/riscv_build_and_run.sh`): Orchestrates the complete build and test workflow
-4. **Source Code** (`src/`): C++ code that is compiled and tested for RISC-V compatibility
+1. **Docker Environment** (`docker/`): Provides an isolated build environment with Clang, RISC-V cross-compilation tools, Spike, and the proxy kernel (pk)
+2. **CMake Toolchain** (`cmake/toolchains/`): Configures CMake to cross-compile for RISC-V with the V (vector) extension enabled
+3. **Build Script** (`scripts/spike_build_and_run.sh`): Orchestrates the complete build and verification workflow
+4. **Verification Script** (`scripts/verify_rvv_vectorization.sh`): Three-phase pipeline for assembly analysis, runtime correctness, and instruction trace
+5. **Source Code** (`src/`): C++ code that is compiled and tested for RISC-V compatibility
 
 ### Workflow
 
-The pipeline workflow, executed via `scripts/riscv_build_and_run.sh`:
+The pipeline workflow, executed via `scripts/spike_build_and_run.sh`:
 
-1. Builds a Docker image containing RISC-V toolchain and QEMU
-2. Configures CMake with the RISC-V toolchain file
-3. Cross-compiles the source code for RISC-V 64-bit Linux
-4. Executes the compiled binary using QEMU user-mode emulation
-5. Validates that the program runs correctly
+1. Builds a Docker image containing Clang, Spike, and the RISC-V toolchain
+2. Compiles test kernels to assembly and verifies RVV instructions are present
+3. Compiles test kernels to a static binary and runs on Spike for correctness
+4. Runs Spike with instruction logging to measure the vectorization ratio
 
-This ensures that the codebase maintains RISC-V compatibility and can be deployed to RISC-V-based systems.
+See `scripts/README.md` for detailed documentation on each phase.
 
 ## Directory Structure
 
