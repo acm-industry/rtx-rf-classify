@@ -13,19 +13,6 @@
 
 namespace sequential_detail {
 
-    template <class T>
-    struct is_tensor_base : std::false_type {};
-
-    template <class T, FixedExtent E>
-    struct is_tensor_base<TensorBase<T, E>> : std::true_type {};
-
-    template <class T>
-    inline constexpr bool is_tensor_base_v =
-        is_tensor_base<std::remove_cvref_t<T>>::value;
-
-    template <class T>
-    concept TensorView = is_tensor_base_v<T>;
-
     // Extract `InTensor` and `OutTensor` from a layer signature:
     //   void operator()(const InTensor&, OutTensor&) [const]
     template <class>
@@ -51,28 +38,6 @@ namespace sequential_detail {
 
     template <class Layer>
     using layer_out_t = typename layer_traits_t<Layer>::out_tensor;
-
-    template <class TB>
-    consteval std::size_t tensor_bytes() {
-        using tensor_t = std::remove_cvref_t<TB>;
-        return sizeof(typename tensor_t::value_type) * tensor_t::static_size;
-    }
-
-    template <class TB>
-    consteval std::size_t tensor_alignment() {
-        using tensor_t = std::remove_cvref_t<TB>;
-        return alignof(typename tensor_t::value_type);
-    }
-
-    template <class TB>
-    constexpr TB make_tensor_view(std::byte* buffer) noexcept {
-        using tensor_t = std::remove_cvref_t<TB>;
-        using value_t = typename tensor_t::value_type;
-        constexpr std::size_t n = tensor_t::static_size;
-
-        auto* typed = reinterpret_cast<value_t*>(buffer);
-        return tensor_t(std::span<value_t, n>(typed, n));
-    }
 
     template <class Alloc>
     struct scratch_buffer {
@@ -135,7 +100,7 @@ namespace sequential_detail {
         }
     };
 
-}
+}  // namespace sequential_detail
 
 template <class A, class... Layers>
     requires(sizeof...(Layers) > 0) && Allocator<A, std::byte>
@@ -147,17 +112,49 @@ class Sequential {
 
     static constexpr std::size_t n_layers = sizeof...(Layers);
 
+    template <class T>
+    struct is_tensor_base : std::false_type {};
+
+    template <class T, FixedExtent E>
+    struct is_tensor_base<TensorBase<T, E>> : std::true_type {};
+
+    template <class T>
+    static constexpr bool is_tensor_base_v =
+        is_tensor_base<std::remove_cvref_t<T>>::value;
+
+    template <class TB>
+    static consteval std::size_t tensor_bytes() {
+        using tensor_t = std::remove_cvref_t<TB>;
+        return sizeof(typename tensor_t::value_type) * tensor_t::static_size;
+    }
+
+    template <class TB>
+    static consteval std::size_t tensor_alignment() {
+        using tensor_t = std::remove_cvref_t<TB>;
+        return alignof(typename tensor_t::value_type);
+    }
+
+    template <class TB>
+    static constexpr TB make_tensor_view(std::byte* buffer) noexcept {
+        using tensor_t = std::remove_cvref_t<TB>;
+        using value_t = typename tensor_t::value_type;
+        constexpr std::size_t n = tensor_t::static_size;
+
+        auto* typed = reinterpret_cast<value_t*>(buffer);
+        return tensor_t(std::span<value_t, n>(typed, n));
+    }
+
     template <class L>
     static consteval void validate_layer() {
         using in_t = sequential_detail::layer_in_t<L>;
         using out_t = sequential_detail::layer_out_t<L>;
 
         static_assert(
-            sequential_detail::TensorView<in_t>,
+            is_tensor_base_v<in_t>,
             "Sequential layer input must be a TensorBase<T, Extents> type."
         );
         static_assert(
-            sequential_detail::TensorView<out_t>,
+            is_tensor_base_v<out_t>,
             "Sequential layer output must be a TensorBase<T, Extents> type."
         );
         static_assert(
@@ -204,8 +201,8 @@ class Sequential {
         std::size_t max_bytes = 0;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
             ((max_bytes = std::max(
-                  max_bytes, sequential_detail::tensor_bytes<
-                                 sequential_detail::layer_out_t<layer_t<Is>>>()
+                  max_bytes,
+                  tensor_bytes<sequential_detail::layer_out_t<layer_t<Is>>>()
               )),
              ...);
         }(
@@ -219,8 +216,8 @@ class Sequential {
         std::size_t max_align = 1;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
             ((max_align = std::max(
-                  max_align, sequential_detail::tensor_alignment<
-                                 sequential_detail::layer_out_t<layer_t<Is>>>()
+                  max_align,
+                  tensor_alignment<sequential_detail::layer_out_t<layer_t<Is>>>()
               )),
              ...);
         }(
@@ -261,8 +258,8 @@ class Sequential {
 
     template <std::size_t I>
     constexpr void run_stage(std::byte* in_buf, std::byte* out_buf) const {
-        auto in_view = sequential_detail::make_tensor_view<in_t<I>>(in_buf);
-        auto out_view = sequential_detail::make_tensor_view<out_t<I>>(out_buf);
+        auto in_view = make_tensor_view<in_t<I>>(in_buf);
+        auto out_view = make_tensor_view<out_t<I>>(out_buf);
         layer<I>()(in_view, out_view);
     }
 
@@ -298,7 +295,7 @@ class Sequential {
 
         // Stage 0: in -> ping
         {
-            auto out_view = sequential_detail::make_tensor_view<out_t<0>>(ping);
+            auto out_view = make_tensor_view<out_t<0>>(ping);
             layer<0>()(in, out_view);
         }
 
@@ -315,8 +312,7 @@ class Sequential {
 
         // Final stage: ping -> out
         {
-            auto in_view =
-                sequential_detail::make_tensor_view<in_t<n_layers - 1>>(ping);
+            auto in_view = make_tensor_view<in_t<n_layers - 1>>(ping);
             layer<n_layers - 1>()(in_view, out);
         }
     }
