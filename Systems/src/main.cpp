@@ -1,265 +1,310 @@
-#include <iostream>
-#include "tensor.h"
-#include "convolve.h"
-#include "batchnorm.h"
-#include <random>
-#include <ranges>
 #include <algorithm>
+#include <array>
+#include <cstddef>
+#include <iostream>
+#include <memory>
+#include <ranges>
+#include <span>
+
 #include "ExprSystem/Broadcast.h"
+#include "ExprSystem/ExprFunctions.h"
 #include "ExprSystem/Expression.h"
 #include "ExprSystem/Scalar.h"
-#include "ExprSystem/ExprFunctions.h"
-#include "memorybuffer.h"
-#include "maxpool.h"
 #include "avgpool.h"
+#include "batchnorm.h"
+#include "convolve.h"
 #include "maweights.cpp"
+#include "maxpool.h"
+#include "memorybuffer.h"
 #include "network.h"
+#include "sequential.h"
+#include "tensor.h"
 
-std::random_device rd;
-std::mt19937 gen(rd());
-std::uniform_real_distribution<float> dist(-100, 100);
+template <size_t... idxs>
+    requires(sizeof...(idxs) > 0)
+using f32Tensor = DynTensor<
+    float, std::extents<size_t, idxs...>, MemoryBuffer::Allocator<float, 32>>;
 
-template <size_t... idxs> requires ( sizeof...(idxs) > 0 )
-using f32Tensor = DynTensor<float, std::extents<size_t, idxs...>, MemoryBuffer::Allocator<float, 32>>;
-
-template <size_t... idxs> requires ( sizeof...(idxs) > 0 )
+template <size_t... idxs>
+    requires(sizeof...(idxs) > 0)
 using f32TensorView = TensorBase<float, std::extents<size_t, idxs...>>;
 
-
-template <size_t padding, FixedExtent E1, FixedExtent E2, FixedExtent E3, FixedExtent E4> requires ( E1::rank() == 2 && E2::rank() == 3 && E3::rank() == 1 && E4::rank() == 2 )
-void BroadcastConvolve( 
-  const TensorBase<float, E1>& input,
-  const TensorBase<float, E2>& weights,
-  const TensorBase<float, E3>& bias,
-  TensorBase<float, E4>& out  
+template <
+    size_t padding, FixedExtent E1, FixedExtent E2, FixedExtent E3,
+    FixedExtent E4>
+    requires(
+        E1::rank() == 2 && E2::rank() == 3 && E3::rank() == 1 && E4::rank() == 2
+    )
+void BroadcastConvolve(
+    const TensorBase<float, E1>& input, const TensorBase<float, E2>& weights,
+    const TensorBase<float, E3>& bias, TensorBase<float, E4>& out
 ) {
+    std::array<float, E4::static_extent(1)> membuf;
+    f32TensorView<E4::static_extent(1)> partial{std::span(membuf)};
 
-  std::array<float, E4::static_extent(1)> membuf;
-  f32TensorView<E4::static_extent(1)> partial{ std::span(membuf) };
+    for (size_t oc = 0; oc < E2::static_extent(0); ++oc) {
+        auto out_oc = out[oc];
 
-  for (size_t oc = 0; oc < E2::static_extent(0); ++oc ) {
-    auto out_oc = out[oc];
+        float b = bias[oc];
+        for (size_t i = 0; i < E4::static_extent(1); ++i) out_oc[i] = b;
 
-    float b = bias[oc];
-    for (size_t i = 0; i < E4::static_extent(1); ++i) out_oc[i] = b;
+        for (size_t ic = 0; ic < E2::static_extent(1); ++ic) {
+            auto x_ic = input[ic];
+            auto w_oc_ic = weights[oc, ic];
 
-    for (size_t ic = 0; ic < E2::static_extent(1); ++ic) {
-      auto x_ic = input[ic];
-      auto w_oc_ic = weights[oc, ic];
-      
-      Conv1DInPlace<padding>(x_ic, w_oc_ic, partial);
-      
-      for (size_t i = 0; i < E4::static_extent(1); ++i) out_oc[i] += partial[i];
+            Conv1DInPlace<padding>(x_ic, w_oc_ic, partial);
+
+            for (size_t i = 0; i < E4::static_extent(1); ++i)
+                out_oc[i] += partial[i];
+        }
     }
-
-  }
-
 }
 
-void FeatureExtractor( const f32TensorView<3, 128>& input, f32TensorView<128, 32>& out ) {
-  /** -----------------------------------------------------
-   *  Layer One, Conv1D -> BatchNorm1D -> ReLU -> MaxPool1D
-   *  -----------------------------------------------------
-   */ 
+namespace model {
+    using scratch_alloc_t = std::allocator<std::byte>;
 
+    using In = f32TensorView<3, 128>;
+    using L1Conv = f32TensorView<64, 128>;
+    using L1Pool = f32TensorView<64, 64>;
+    using L2Conv = f32TensorView<128, 64>;
+    using L2Pool = f32TensorView<128, 32>;
+    using L3Conv = f32TensorView<128, 32>;
+    using L4Conv = f32TensorView<128, 32>;
+    using Vec128 = f32TensorView<128>;
+    using Vec11 = f32TensorView<11>;
 
-   
-  // Memory buffer to reuse the same stack memory moving from tensor to tensor.
-  // Largest size we have is 128 * 64 on layer two. So we need max two temporaries of size 128 * 64. Plus a bit of wiggle room in case (+ 256).
-  std::array<std::byte, 128 * 64 * sizeof(float) + 256> memory1;
-  MemoryBuffer buf1( std::span{memory1} );
-  auto allocator1 = buf1.get_allocator<float, 32>();
+    template <
+        size_t padding, class XIn, class XOut, size_t OC, size_t IC, size_t K>
+    struct BroadcastConv1D {
+        f32TensorView<OC, IC, K> w;
+        f32TensorView<OC> b;
 
-  std::array<std::byte, 128 * 64 * sizeof(float) + 256> memory2;
-  MemoryBuffer buf2( std::span{memory2} );
-  auto allocator2 = buf2.get_allocator<float, 32>();
+        BroadcastConv1D(float* weights, float* bias)
+            : w(std::span<float, OC * IC * K>(weights, OC * IC * K)),
+              b(std::span<float, OC>(bias, OC)) {}
 
-  f32Tensor<64, 128> conv_out_layer1(allocator1);  
-  f32TensorView<64, 3, 5> conv_weights_layer1{ std::span<float, 64 * 3 * 5>(weights_conv_1d_l1, 64 * 3 * 5) };
+        void operator()(const XIn& in, XOut& out) const {
+            BroadcastConvolve<padding>(in, w, b, out);
+        }
+    };
 
-  auto slice = conv_weights_layer1[0,0, 0];
-  using demo = decltype(slice);
+    template <class X, size_t C>
+    struct BatchNorm {
+        f32TensorView<4, C> w;
 
-  f32TensorView<64> conv_bias_weights_layer1{ std::span<float, 64>(weights_conv_1d_bias_l1, 64) };
+        explicit BatchNorm(float* weights)
+            : w(std::span<float, 4 * C>(weights, 4 * C)) {}
 
-  BroadcastConvolve<2>( input, conv_weights_layer1, conv_bias_weights_layer1, conv_out_layer1 );
-   
-  f32TensorView<4, 64> bn_weights_layer1{ std::span<float, 4 * 64>( weights_bn_1d_l1, 4 * 64 ) };
+        void operator()(const X& in, X& out) const {
+            BatchNorm1DInPlace(in, w, out);
+        }
+    };
 
-  BatchNorm1DInPlace( conv_out_layer1, bn_weights_layer1, conv_out_layer1 );
+    template <class X>
+    struct ReluInPlace {
+        void operator()(const X& in, X& out) const {
+            in_place_eval(relu(in), out);
+        }
+    };
 
-  in_place_eval( relu(conv_out_layer1.as_view()), conv_out_layer1 );
+    template <size_t kernel, size_t stride, class XIn, class XOut>
+        requires(
+            XIn::rank == 2 && XOut::rank == 2 &&
+            std::same_as<
+                std::remove_cv_t<typename XIn::value_type>,
+                std::remove_cv_t<typename XOut::value_type>> &&
+            !std::is_const_v<typename XOut::value_type> &&
+            (XIn::extents_type::static_extent(0) ==
+             XOut::extents_type::static_extent(0))
+        )
+    struct ChannelMaxPool1D {
+        static constexpr size_t C = XIn::extents_type::static_extent(0);
 
-  f32Tensor<64, 64> mp_out_layer1(allocator2);
+        void operator()(const XIn& in, XOut& out) const {
+            for (size_t i = 0; i < C; ++i) {
+                auto outvec = out[i];
+                MaxPool1DInPlace<kernel, stride>(in[i], outvec);
+            }
+        }
+    };
 
-  for (size_t i = 0; i < 64; ++i) {
-    auto outvec = mp_out_layer1[i];
-    MaxPool1DInPlace<2, 2>( conv_out_layer1[i] , outvec );
-  }
+    using Conv1 = BroadcastConv1D<2, In, L1Conv, 64, 3, 5>;
+    using Conv2 = BroadcastConv1D<2, L1Pool, L2Conv, 128, 64, 5>;
+    using Conv3 = BroadcastConv1D<1, L2Pool, L3Conv, 128, 128, 3>;
+    using Conv4 = BroadcastConv1D<1, L3Conv, L4Conv, 128, 128, 3>;
 
-  // Notice that, from now on, conv_out_layer1 goes unused. We can just reset the memory pool and reuse the same memory.
-  buf1.reset();
-  
-  /** -----------------------------------------------------
-   *  Layer Two, Conv1D -> BatchNorm1D -> ReLU -> MaxPool1D
-   *  -----------------------------------------------------
-   */ 
+    using BN1 = BatchNorm<L1Conv, 64>;
+    using BN2 = BatchNorm<L2Conv, 128>;
+    using BN3 = BatchNorm<L3Conv, 128>;
+    using BN4 = BatchNorm<L4Conv, 128>;
 
-  f32TensorView<128, 64, 5> conv_weights_layer2( std::span<float, 128 * 64 * 5>( weights_conv_1d_l2, 128 * 64 * 5 ) );
-  f32TensorView<128> conv_bias_weights_layer2{ std::span<float, 128>(weights_conv_1d_bias_l2, 128) };
-  f32Tensor<128, 64> conv_out_layer2( allocator1 );
+    using Relu64_128 = ReluInPlace<L1Conv>;
+    using Relu128_64 = ReluInPlace<L2Conv>;
+    using Relu128_32 = ReluInPlace<L3Conv>;
+    using ReluOut = ReluInPlace<L4Conv>;
 
-  BroadcastConvolve<2>( mp_out_layer1, conv_weights_layer2, conv_bias_weights_layer2, conv_out_layer2 );
+    using MP1 = ChannelMaxPool1D<2, 2, L1Conv, L1Pool>;
+    using MP2 = ChannelMaxPool1D<2, 2, L2Conv, L2Pool>;
 
-  f32TensorView<4, 128> bn_weights_layer2( std::span<float, 4 * 128>( weights_bn_1d_l2, 4 * 128 ) );
+    struct GlobalAvgPool {
+        void operator()(const L4Conv& in, Vec128& out) const {
+            for (size_t i = 0; i < 128; ++i) {
+                auto in_slice = in[i];
+                TensorBase<float, std::extents<size_t, 1>> out_scalar{
+                    std::span<float, 1>(out.data() + i, 1)
+                };
+                AdaptiveAvgPool1DInPlace<1>(in_slice, out_scalar);
+            }
+        }
+    };
 
-  BatchNorm1DInPlace( conv_out_layer2, bn_weights_layer2, conv_out_layer2 );
+    template <class XIn, class XOut, size_t O, size_t I>
+    struct Linear {
+        f32TensorView<O, I> w;
 
-  in_place_eval( relu( conv_out_layer2.as_view() ), conv_out_layer2 );
+        explicit Linear(float* weights)
+            : w(std::span<float, O * I>(weights, O * I)) {}
 
-  buf2.reset();
+        void operator()(const XIn& in, XOut& out) const {
+            blas::gemv(w, in, out);
+        }
+    };
 
-  f32Tensor<128, 32> mp_out_layer2(allocator2);
+    template <class X, size_t N>
+    struct BiasAdd {
+        X b;
 
-  for (size_t i = 0; i < 128; ++i) {
-    auto outvec = mp_out_layer2[i];
-    
-    using demo = decltype(outvec);
+        explicit BiasAdd(float* bias) : b(std::span<float, N>(bias, N)) {}
 
-    MaxPool1DInPlace<2, 2>( conv_out_layer2[i], outvec );
-  }
-  
-  // at this point, co_layer2 is using alloc1, mpout_layer2 is using alloc2
-  buf1.reset();
-  
-  /** ------------------------------------------
-   *  Layer Three, Conv1D -> BatchNorm1D -> ReLU 
-   *  ------------------------------------------
-   */ 
+        void operator()(const X& in, X& out) const {
+            in_place_eval(in + b, out);
+        }
+    };
 
-  f32TensorView<128, 128, 3> conv_weights_layer3( std::span<float, 128 * 128 * 3>( weights_conv_1d_l3, 128 * 128 * 3 ) );
-  f32TensorView<128> conv_bias_weights_layer3{ std::span<float, 128>(weights_conv_1d_bias_l3, 128) };
-  f32Tensor<128, 32> conv_out_layer3( allocator1 );
+    template <class X, size_t N>
+    struct BiasAddRelu {
+        X b;
 
-  BroadcastConvolve<1>( mp_out_layer2, conv_weights_layer3, conv_bias_weights_layer3, conv_out_layer3 );
+        explicit BiasAddRelu(float* bias) : b(std::span<float, N>(bias, N)) {}
 
-  f32TensorView<4, 128> bn_weights_layer3( std::span<float, 4 * 128>( weights_bn_1d_l3, 4 * 128 ) );
+        void operator()(const X& in, X& out) const {
+            in_place_eval(relu(in + b), out);
+        }
+    };
 
-  BatchNorm1DInPlace( conv_out_layer3, bn_weights_layer3, conv_out_layer3 );
+    using Linear1 = Linear<Vec128, Vec128, 128, 128>;
+    using BiasRelu1 = BiasAddRelu<Vec128, 128>;
+    using Linear2 = Linear<Vec128, Vec11, 11, 128>;
+    using Bias2 = BiasAdd<Vec11, 11>;
 
-  in_place_eval( relu( conv_out_layer3.as_view() ), conv_out_layer3 );
- 
-  /** -----------------------------------------
-   *  Layer Four, Conv1D -> BatchNorm1D -> ReLU 
-   *  -----------------------------------------
-   */ 
+    using FeatureExtractor = Sequential<
+        scratch_alloc_t, Conv1, BN1, Relu64_128, MP1, Conv2, BN2, Relu128_64,
+        MP2, Conv3, BN3, Relu128_32, Conv4, BN4, ReluOut>;
 
-  buf2.reset();
+    using ClassifierHead = Sequential<
+        scratch_alloc_t, GlobalAvgPool, Linear1, BiasRelu1, Linear2, Bias2>;
 
-  f32TensorView<128, 128, 3> conv_weights_layer4( std::span<float, 128 * 128 * 3>( weights_conv_1d_l4, 128 * 128 * 3 ) );
-  f32TensorView<128> conv_bias_weights_layer4{ std::span<float, 128>(weights_conv_1d_bias_l4, 128) };
-  f32Tensor<128, 32> conv_out_layer4(allocator2);
-
-  BroadcastConvolve<1>( conv_out_layer3, conv_weights_layer4, conv_bias_weights_layer4, conv_out_layer4 );
-
-  f32TensorView<4, 128> bn_weights_layer4( std::span<float, 4 * 128>( weights_bn_1d_l4, 4 * 128 ) );
-
-  BatchNorm1DInPlace( conv_out_layer4, bn_weights_layer4, conv_out_layer4 );
-
-  in_place_eval( relu( conv_out_layer4.as_view() ), out );
-
-}
-
-void ClassifierHead(const f32TensorView<128, 32>& input, f32TensorView<11>& out ) {
-  
-  // Same idea as FeatureExtractor; preallocate the stack memory we will use for temporaries.
-  std::array<std::byte, 128 * sizeof(float) + 256> memory1;
-  MemoryBuffer buf1( std::span{memory1} );
-  auto allocator1 = buf1.get_allocator<float, 32>();
-
-  std::array<std::byte, 128 * sizeof(float) + 256> memory2;
-  MemoryBuffer buf2( std::span{memory2} );
-  auto allocator2 = buf2.get_allocator<float, 32>();
-
-  f32Tensor<128, 1> avgpool_out( allocator1 );
-
-  for (size_t i = 0; i < 128; ++i) {
-    auto input_slice = input[i];
-    auto output_slice = avgpool_out[i];
-    AdaptiveAvgPool1DInPlace<1>( input_slice, output_slice );
-  }
-
-  f32TensorView<128> new_view{ std::span< float, 128 >( avgpool_out.data(), 128 ) };
-  f32TensorView<128, 128> linear_mat_weights_1{ std::span<float, 128 * 128>( linear_mat_1, 128 * 128 ) };
-  f32Tensor<128> linear_out_1( allocator2 );
-
-  blas::gemv(linear_mat_weights_1, new_view, linear_out_1);
-
-  f32TensorView<128> linear_add_weights_1{ std::span<float, 128>( linear_add_1, 128 ) };
-
-  in_place_eval( relu( linear_out_1.as_view() + linear_add_weights_1), linear_out_1 );
-
-  f32TensorView<11, 128> linear_mat_weights_2{ std::span<float, 11 * 128>( linear_mat_2, 11 * 128 ) };
-
-  blas::gemv( linear_mat_weights_2, linear_out_1, out );
-
-  f32TensorView<11> final_add{ std::span<float, 11>( linear_add_2, 11 ) };
-
-  in_place_eval( out + final_add, out );
-}
+    using Model = Sequential<scratch_alloc_t, FeatureExtractor, ClassifierHead>;
+}  // namespace model
 
 int main() {
+    static constexpr size_t INPUT_ALLOC_BYTES = (3 * 128) * sizeof(float) + 256;
+    MemoryBuffer buf(
+        INPUT_ALLOC_BYTES
+    );  // Alloc enough for input tensor plus some wiggle room
+    auto alloc = buf.get_allocator<float, 32>();
 
-  static constexpr size_t INPUT_OUTPUT_ALLOC_BYTES = ( 3 * 128 + 128 * 32 ) * sizeof(float) + 256;
-  MemoryBuffer buf( INPUT_OUTPUT_ALLOC_BYTES ); // Alloc enough for input/output tensor plus some wiggle room
-  auto alloc = buf.get_allocator<float, 32>();
+    f32Tensor<3, 128> input(alloc);
 
-  f32Tensor<3, 128> input(alloc);
-  f32Tensor<128, 32> output(alloc);
+    model::scratch_alloc_t seq_alloc{};
+    model::FeatureExtractor feature_extractor{
+        seq_alloc,
+        model::Conv1{weights_conv_1d_l1, weights_conv_1d_bias_l1},
+        model::BN1{weights_bn_1d_l1},
+        model::Relu64_128{},
+        model::MP1{},
+        model::Conv2{weights_conv_1d_l2, weights_conv_1d_bias_l2},
+        model::BN2{weights_bn_1d_l2},
+        model::Relu128_64{},
+        model::MP2{},
+        model::Conv3{weights_conv_1d_l3, weights_conv_1d_bias_l3},
+        model::BN3{weights_bn_1d_l3},
+        model::Relu128_32{},
+        model::Conv4{weights_conv_1d_l4, weights_conv_1d_bias_l4},
+        model::BN4{weights_bn_1d_l4},
+        model::ReluOut{}
+    };
+    model::ClassifierHead classifier_head{
+        seq_alloc,
+        model::GlobalAvgPool{},
+        model::Linear1{linear_mat_1},
+        model::BiasRelu1{linear_add_1},
+        model::Linear2{linear_mat_2},
+        model::Bias2{linear_add_2}
+    };
+    model::Model model{seq_alloc, feature_extractor, classifier_head};
 
-  Server server(8080);
+    Server server(8080);
 
-  std::cout << "Listening on port 8080.\n";
+    std::cout << "Listening on port 8080.\n";
 
-  for (;;) {
-    Connection conn = server.accept();
+    for (;;) {
+        Connection conn = server.accept();
 
-    std::cout << "Recieved connection. Running compute...\n";
+        std::cout << "Recieved connection. Running compute...\n";
 
-    // MVP TCP protocol: 4 bytes on batch len, then batch_len instances of 3 * 128 bytes.
+        // MVP TCP protocol: 4 bytes on batch len, then batch_len instances of 3
+        // * 128 bytes.
 
-    unsigned int batch_len_net;
-    conn.recv( std::span<std::byte>( reinterpret_cast<std::byte*>(&batch_len_net), sizeof(unsigned int) ) );
-    unsigned int batch_len = ntohl( batch_len_net );
+        unsigned int batch_len_net;
+        conn.recv(
+            std::span<std::byte>(
+                reinterpret_cast<std::byte*>(&batch_len_net),
+                sizeof(unsigned int)
+            )
+        );
+        unsigned int batch_len = ntohl(batch_len_net);
 
-    if ( batch_len == 0 ) continue;
+        if (batch_len == 0) continue;
 
-    try {
+        try {
+            for (unsigned int i = 0; i < batch_len; ++i) {
+                conn.recv(
+                    std::span<std::byte>(
+                        reinterpret_cast<std::byte*>(input.data()),
+                        3 * 128 * sizeof(float)
+                    )
+                );
 
-      for (unsigned int i = 0; i < batch_len; ++i) {
-        conn.recv( std::span<std::byte>( reinterpret_cast<std::byte*>(input.data()), 3 * 128 * sizeof(float)) );
+                std::array<float, 11> final_buf;
 
-        FeatureExtractor( input, output );
+                f32TensorView<11> final{std::span(final_buf)};
 
-        std::array<float, 11> final_buf;
+                model(input, final);
 
-        f32TensorView<11> final{ std::span( final_buf ) };
+                unsigned char argmax = 0;
+                float best = final[0];
+                for (unsigned char j = 1; j < 11; ++j) {
+                    float v = final[j];
+                    if (v > best) {
+                        best = v;
+                        argmax = j;
+                    }
+                }
 
-        ClassifierHead( output, final );
+                conn.send(
+                    std::span<std::byte>(
+                        reinterpret_cast<std::byte*>(&argmax), 1
+                    )
+                );
+            }
 
-        unsigned char argmax = std::ranges::distance(final.begin(), std::ranges::max_element( final ));
+            std::cout << "Batch sent.\n";
 
-        conn.send( std::span<std::byte>( reinterpret_cast<std::byte*>(&argmax) , 1 ) );
-      }
-
-
-      std::cout << "Batch sent.\n";
-
-    } catch ( const std::runtime_error& err ) {
-      std::cout << "Connection closed. Killing compute.\n";
+        } catch (const std::runtime_error& err) {
+            std::cout << "Connection closed. Killing compute.\n";
+        }
     }
 
-  }
-
-  return 0;
+    return 0;
 }

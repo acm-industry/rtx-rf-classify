@@ -2,7 +2,13 @@
 #define __TENSOR_H__
 
 #include <memory>
+#if __has_include(<mdspan>)
+#include <mdspan>
+#elif __has_include(<experimental/mdspan>)
 #include <experimental/mdspan>
+#else
+#error "No mdspan header found. Provide C++23 <mdspan> or a compatible <experimental/mdspan>."
+#endif
 #include <concepts>
 #include <algorithm>
 #include <cassert>
