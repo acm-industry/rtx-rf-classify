@@ -93,6 +93,8 @@ public:
     static constexpr auto extents = E{};
     static constexpr std::size_t rank = E::rank();
     static constexpr std::size_t static_size = compute_static_size<E>();
+    static constexpr std::size_t byte_size = sizeof(value_type) * static_size;
+    static constexpr std::size_t alignment = alignof(value_type);
     static constexpr std::size_t iter_size() noexcept { return static_size; }
 
     static constexpr std::array<std::size_t, rank> strides = compute_strides<E>();
