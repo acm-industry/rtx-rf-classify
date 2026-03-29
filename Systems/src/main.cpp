@@ -13,6 +13,7 @@
 #include "maxpool.h"
 #include "avgpool.h"
 #include "maweights.cpp"
+#include "weights_init.h"
 #include "network.h"
 
 std::random_device rd;
@@ -209,6 +210,10 @@ void ClassifierHead(const f32TensorView<128, 32>& input, f32TensorView<11>& out 
 }
 
 int main() {
+
+#if WEIGHTS_FP16
+  init_fp16_weights();
+#endif
 
   static constexpr size_t INPUT_OUTPUT_ALLOC_BYTES = ( 3 * 128 + 128 * 32 ) * sizeof(float) + 256;
   MemoryBuffer buf( INPUT_OUTPUT_ALLOC_BYTES ); // Alloc enough for input/output tensor plus some wiggle room

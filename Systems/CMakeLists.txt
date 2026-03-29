@@ -10,6 +10,7 @@ include(FetchContent)
 option(USE_BLAS  "Use BLAS (OpenBLAS preferred)" ON)
 option(USE_FFTW  "Use FFTW3" OFF)
 option(USE_HWY   "Use Google Highway SIMD" OFF)
+option(WEIGHTS_FP16 "Link FP16 weight blobs; decode to float at startup (half ROM vs float32)" OFF)
 
 FetchContent_Declare(
   mdspan
@@ -70,12 +71,22 @@ add_executable(classify
   ${WEIGHT_OBJECTS}
 )
 
+if(WEIGHTS_FP16)
+  target_compile_definitions(classify PRIVATE WEIGHTS_FP16=1)
+else()
+  target_compile_definitions(classify PRIVATE WEIGHTS_FP16=0)
+endif()
+
 target_include_directories(classify PRIVATE
   src
   src/vector
 )
 
 target_link_libraries(classify PRIVATE mdspan)
+
+add_executable(test_fp16_decode src/tests/test_fp16_decode.cpp)
+target_include_directories(test_fp16_decode PRIVATE src)
+target_compile_features(test_fp16_decode PRIVATE cxx_std_23)
 
 if(USE_HWY)
   target_link_libraries(classify PRIVATE hwy)
