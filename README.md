@@ -21,29 +21,21 @@ cd Classification
 python3 scripts/convert_checkpoint_fp32_to_fp16.py ../Systems/src/cnn/radioml_cnn_pytorch.pth -o radioml_cnn_pytorch_fp16.pth
 ```
 
-### 2) Python inference test
-```bash
-cat > /tmp/run_compare.py <<'PY'
-import time, numpy as np, torch
-from Classification.model_utils import load_radioml_cnn
+### 2) Notebook-based TCP inference comparison (preferred)
+1. Open `Classification/dataset/radioml.ipynb` in Jupyter.
+2. Run cells to preprocess and generate `output` + `y` for the test dataset.
+3. Run the socket helper and loop cells starting at:
+   - `import socket as sock`
+   - `def recv_exact(sock, n)`
+   - send batch len and send `batch[i:i+BUNDLE_COUNT].tobytes()`
+   - validate `np.frombuffer(data, dtype=np.uint8)` against `y`
 
-paths = {
-    'fp32': 'Systems/src/cnn/radioml_cnn_pytorch.pth',
-    'fp16': 'Classification/radioml_cnn_pytorch_fp16.pth',
-}
+This notebook does exactly the same per-sample TCP protocol as the embedded C++ service in `Systems/src/main.cpp` (batch_len + 3*128*4 bytes per sample).
 
-x = np.random.randn(16,1,2,128).astype(np.float32)
-for prec, p in paths.items():
-    m = load_radioml_cnn(p, num_classes=11, precision=prec)
-    t0 = time.perf_counter()
-    out = m.model(m.match_inputs(torch.from_numpy(x)))
-    t1 = time.perf_counter()
-    out_np = out.cpu().detach().numpy()
-    print(prec, 'param dtype', m.param_dtype, 'time', t1-t0,
-          'argmax', np.argmax(out_np,1))
-PY
-python3 /tmp/run_compare.py
-```
+4. For FP32: start server in `Systems` with `build/classify`.
+5. Run the notebook cells and record accuracy.
+6. For FP16: start server in `Systems` with `build-fp16/classify` (after building with `-DWEIGHTS_FP16=ON`).
+7. Run the same notebook cells, compare accuracies and timing.
 
 ### 3) Generate System weight blobs (FP32 and FP16)
 ```bash
