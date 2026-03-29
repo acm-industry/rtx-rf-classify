@@ -11,13 +11,14 @@ Please see [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guidelin
 
 ### 0) Start in repo root
 ```bash
-cd /Users/simon/Documents/GitHub/rtx-rf-classify
+cd <your-repo-root>
+# e.g. cd /path/to/rtx-rf-classify
 ```
 
 ### 1) Convert FP32 checkpoint to FP16
 ```bash
 cd Classification
-python scripts/convert_checkpoint_fp32_to_fp16.py ../Systems/src/cnn/radioml_cnn_pytorch.pth -o radioml_cnn_pytorch_fp16.pth
+python3 scripts/convert_checkpoint_fp32_to_fp16.py ../Systems/src/cnn/radioml_cnn_pytorch.pth -o radioml_cnn_pytorch_fp16.pth
 ```
 
 ### 2) Python inference test
@@ -27,8 +28,8 @@ import time, numpy as np, torch
 from Classification.model_utils import load_radioml_cnn
 
 paths = {
-    'fp32': '/Users/simon/Documents/GitHub/rtx-rf-classify/Systems/src/cnn/radioml_cnn_pytorch.pth',
-    'fp16': '/Users/simon/Documents/GitHub/rtx-rf-classify/Classification/radioml_cnn_pytorch_fp16.pth',
+    'fp32': 'Systems/src/cnn/radioml_cnn_pytorch.pth',
+    'fp16': 'Classification/radioml_cnn_pytorch_fp16.pth',
 }
 
 x = np.random.randn(16,1,2,128).astype(np.float32)
@@ -47,13 +48,13 @@ python3 /tmp/run_compare.py
 ### 3) Generate System weight blobs (FP32 and FP16)
 ```bash
 cd Systems/scripts/binaries
-python convert_pth_to_bin.py /Users/simon/Documents/GitHub/rtx-rf-classify/Systems/src/cnn/radioml_cnn_pytorch.pth
-python convert_pth_to_bin.py /Users/simon/Documents/GitHub/rtx-rf-classify/Systems/src/cnn/radioml_cnn_pytorch.pth --fp16
+python3 convert_pth_to_bin.py ../src/cnn/radioml_cnn_pytorch.pth
+python3 convert_pth_to_bin.py ../src/cnn/radioml_cnn_pytorch.pth --fp16
 ```
 
 ### 4) Build C++ binaries
 ```bash
-cd /Users/simon/Documents/GitHub/rtx-rf-classify/Systems
+cd Systems
 rm -rf build build-fp16
 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWEIGHTS_FP16=OFF
