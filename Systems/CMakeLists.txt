@@ -10,6 +10,7 @@ include(FetchContent)
 option(USE_BLAS  "Use BLAS (OpenBLAS preferred)" ON)
 option(USE_FFTW  "Use FFTW3" OFF)
 option(USE_HWY   "Use Google Highway SIMD" OFF)
+option(USE_SLEEF "Use SLEEF SIMD math kernels" OFF)
 
 FetchContent_Declare(
   mdspan
@@ -33,6 +34,47 @@ if(USE_BLAS)
   add_library(blas_interface INTERFACE)
   target_link_libraries(blas_interface INTERFACE ${BLAS_LIBRARIES})
   target_compile_definitions(blas_interface INTERFACE USE_BLAS)
+endif()
+
+if(USE_SLEEF)
+  # Try CMake package config first (preferred)
+  find_package(SLEEF CONFIG QUIET)
+
+  if(TARGET SLEEF::sleef)
+    set(SLEEF_TARGET SLEEF::sleef)
+  elseif(TARGET sleef)
+    set(SLEEF_TARGET sleef)
+  else()
+    # Fallback: pkg-config lookup.
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+      pkg_check_modules(SLEEF QUIET sleef)
+    endif()
+
+    if(SLEEF_FOUND)
+      add_library(sleef_interface INTERFACE)
+      target_include_directories(sleef_interface INTERFACE ${SLEEF_INCLUDE_DIRS})
+      target_link_libraries(sleef_interface INTERFACE ${SLEEF_LIBRARIES})
+      set(SLEEF_TARGET sleef_interface)
+    else()
+      # Final fallback: manual include/lib discovery.
+      find_path(SLEEF_INCLUDE_DIR NAMES sleef.h)
+      find_library(SLEEF_LIBRARY NAMES sleef Sleef libsleef)
+
+      if(SLEEF_INCLUDE_DIR AND SLEEF_LIBRARY)
+        add_library(sleef_interface INTERFACE)
+        target_include_directories(sleef_interface INTERFACE ${SLEEF_INCLUDE_DIR})
+        target_link_libraries(sleef_interface INTERFACE ${SLEEF_LIBRARY})
+        set(SLEEF_TARGET sleef_interface)
+      else()
+        message(FATAL_ERROR
+          "SLEEF requested (USE_SLEEF=ON), but not found. "
+          "Install SLEEF (e.g. macOS: 'brew install sleef', Linux: package such as 'libsleef-dev') "
+          "or provide include/library paths via your toolchain."
+        )
+      endif()
+    endif()
+  endif()
 endif()
 
 if(USE_FFTW)
@@ -80,6 +122,11 @@ target_link_libraries(classify PRIVATE mdspan)
 if(USE_HWY)
   target_link_libraries(classify PRIVATE hwy)
   target_compile_definitions(classify PRIVATE USE_HWY)
+endif()
+
+if(USE_SLEEF)
+  target_link_libraries(classify PRIVATE ${SLEEF_TARGET})
+  target_compile_definitions(classify PRIVATE USE_SLEEF)
 endif()
 
 if(USE_BLAS)

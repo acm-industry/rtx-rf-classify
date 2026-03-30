@@ -12,6 +12,7 @@
 #include "memorybuffer.h"
 #include "maxpool.h"
 #include "avgpool.h"
+#include "operators/unary_ops.h"
 #include "maweights.cpp"
 #include "network.h"
 
@@ -88,7 +89,8 @@ void FeatureExtractor( const f32TensorView<3, 128>& input, f32TensorView<128, 32
 
   BatchNorm1DInPlace( conv_out_layer1, bn_weights_layer1, conv_out_layer1 );
 
-  in_place_eval( relu(conv_out_layer1.as_view()), conv_out_layer1 );
+  ops::ReluOp relu_op;
+  relu_op(conv_out_layer1, conv_out_layer1);
 
   f32Tensor<64, 64> mp_out_layer1(allocator2);
 
@@ -115,7 +117,7 @@ void FeatureExtractor( const f32TensorView<3, 128>& input, f32TensorView<128, 32
 
   BatchNorm1DInPlace( conv_out_layer2, bn_weights_layer2, conv_out_layer2 );
 
-  in_place_eval( relu( conv_out_layer2.as_view() ), conv_out_layer2 );
+  relu_op(conv_out_layer2, conv_out_layer2);
 
   buf2.reset();
 
@@ -147,7 +149,7 @@ void FeatureExtractor( const f32TensorView<3, 128>& input, f32TensorView<128, 32
 
   BatchNorm1DInPlace( conv_out_layer3, bn_weights_layer3, conv_out_layer3 );
 
-  in_place_eval( relu( conv_out_layer3.as_view() ), conv_out_layer3 );
+  relu_op(conv_out_layer3, conv_out_layer3);
  
   /** -----------------------------------------
    *  Layer Four, Conv1D -> BatchNorm1D -> ReLU 
@@ -166,7 +168,7 @@ void FeatureExtractor( const f32TensorView<3, 128>& input, f32TensorView<128, 32
 
   BatchNorm1DInPlace( conv_out_layer4, bn_weights_layer4, conv_out_layer4 );
 
-  in_place_eval( relu( conv_out_layer4.as_view() ), out );
+  relu_op(conv_out_layer4, out);
 
 }
 

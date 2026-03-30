@@ -1,5 +1,7 @@
 #include <cblas.h>
 #include <cstddef>
+#include <cmath>
+#include <algorithm>
 
 static void impl_add(const float* a, const float* b, float* out, size_t n) {
     // BLAS saxpy is in-place (y += alpha*x), doesn't match out-of-place API.
@@ -36,4 +38,34 @@ static void impl_matvec(const float* a, const float* x, float* out,
                 x, 1,
                 0.0f,
                 out, 1);
+}
+
+static void impl_relu(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = std::max(0.0f, in[i]);
+    }
+}
+
+static void impl_exp(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = std::exp(in[i]);
+    }
+}
+
+static void impl_log(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = std::log(in[i]);
+    }
+}
+
+static void impl_tanh(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = std::tanh(in[i]);
+    }
+}
+
+static void impl_sigmoid(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = 1.0f / (1.0f + std::exp(-in[i]));
+    }
 }

@@ -123,3 +123,42 @@ static void impl_matvec(const float* a, const float* x, float* out,
                          size_t rows, size_t cols) {
     hwy::HWY_NAMESPACE::hwy_matvec(a, x, out, rows, cols);
 }
+
+static void impl_relu(const float* in, float* out, size_t n) {
+    const hwy::HWY_NAMESPACE::ScalableTag<float> d;
+    const size_t lanes = hwy::HWY_NAMESPACE::Lanes(d);
+    const auto zero = hwy::HWY_NAMESPACE::Zero(d);
+
+    size_t i = 0;
+    while (i < n) {
+        const size_t remaining = n - i;
+        const size_t count = remaining < lanes ? remaining : lanes;
+        auto x = hwy::HWY_NAMESPACE::LoadN(d, in + i, count);
+        hwy::HWY_NAMESPACE::StoreN(hwy::HWY_NAMESPACE::Max(x, zero), d, out + i, count);
+        i += count;
+    }
+}
+
+static void impl_exp(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = std::exp(in[i]);
+    }
+}
+
+static void impl_log(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = std::log(in[i]);
+    }
+}
+
+static void impl_tanh(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = std::tanh(in[i]);
+    }
+}
+
+static void impl_sigmoid(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = 1.0f / (1.0f + std::exp(-in[i]));
+    }
+}
