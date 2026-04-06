@@ -1,0 +1,47 @@
+FROM ubuntu:24.04 AS base
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# ── System dependencies for LLVM, Verilator, and Bender ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build pkg-config \
+    autoconf automake autotools-dev \
+    device-tree-compiler libboost-regex-dev libboost-system-dev \
+    libelf-dev flex bison help2man \
+    zlib1g-dev \
+    python3 python3-pip \
+    curl \
+    ca-certificates \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV ARA_DIR=/opt/ara
+
+# ── Clone Ara (shallow) and selectively init required submodules ──
+# Skip riscv-gnu-toolchain and riscv-isa-sim -- not needed for Verilator flow.
+RUN git clone --depth 1 https://github.com/pulp-platform/ara.git ${ARA_DIR}
+
+WORKDIR ${ARA_DIR}
+
+RUN git submodule update --init --recursive toolchain/riscv-llvm && \
+    git submodule update --init --recursive toolchain/newlib && \
+    git submodule update --init --recursive toolchain/verilator
+
+# ── Build RISC-V LLVM toolchain (Clang + newlib + compiler-rt) ──
+# This is the longest step (~90 min). Each sub-target is a separate layer
+# so partial failures can resume from cache.
+RUN make toolchain-llvm-main -j"$(nproc)"
+RUN make toolchain-llvm-newlib
+RUN make toolchain-llvm-rt
+
+# ── Build Verilator ──
+RUN make verilator
+
+# ── Hardware: install Bender, checkout IPs, apply patches, verilate ──
+RUN cd hardware && make checkout
+RUN cd hardware && make apply-patches
+RUN cd hardware && make verilate
+
+ENV PATH="${ARA_DIR}/install/riscv-llvm/bin:${ARA_DIR}/install/verilator/bin:${PATH}"
+
+WORKDIR /work
