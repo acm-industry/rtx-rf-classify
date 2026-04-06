@@ -1,9 +1,43 @@
 #include <cstddef>
 #include <cmath>
-#include <cstdlib>
 #include <algorithm>
 
-static constexpr float PI = 3.14159265358979323846f;
+#if __has_include(<sleef.h>)
+#include <sleef.h>
+#define VEC_SLEEF_HEADER_FOUND 1
+#else
+#define VEC_SLEEF_HEADER_FOUND 0
+#endif
+
+// NOTE:
+// - This backend is selected only when USE_SLEEF is enabled.
+// - We call SLEEF math entry points for transcendental unary ops when sleef.h
+//   is available, and fall back to std::* otherwise.
+// - add/dot/matmul/matvec remain simple loops here; BLAS still owns matrix ops.
+
+static inline float sleef_exp_u10(float x) {
+#if VEC_SLEEF_HEADER_FOUND
+    return Sleef_expf_u10(x);
+#else
+    return std::exp(x);
+#endif
+}
+
+static inline float sleef_log_u10(float x) {
+#if VEC_SLEEF_HEADER_FOUND
+    return Sleef_logf_u10(x);
+#else
+    return std::log(x);
+#endif
+}
+
+static inline float sleef_tanh_u10(float x) {
+#if VEC_SLEEF_HEADER_FOUND
+    return Sleef_tanhf_u10(x);
+#else
+    return std::tanh(x);
+#endif
+}
 
 static void impl_add(const float* a, const float* b, float* out, size_t n) {
     for (size_t i = 0; i < n; ++i) {
@@ -20,7 +54,7 @@ static void impl_dot(const float* a, const float* b, float* out, size_t n) {
 }
 
 static void impl_matmul(const float* a, const float* b, float* out,
-                         size_t rows_a, size_t cols_a, size_t cols_b) {
+                        size_t rows_a, size_t cols_a, size_t cols_b) {
     for (size_t i = 0; i < rows_a; ++i) {
         for (size_t j = 0; j < cols_b; ++j) {
             float sum = 0.0f;
@@ -33,7 +67,7 @@ static void impl_matmul(const float* a, const float* b, float* out,
 }
 
 static void impl_matvec(const float* a, const float* x, float* out,
-                         size_t rows, size_t cols) {
+                        size_t rows, size_t cols) {
     for (size_t i = 0; i < rows; ++i) {
         float sum = 0.0f;
         for (size_t j = 0; j < cols; ++j) {
@@ -51,24 +85,24 @@ static void impl_relu(const float* in, float* out, size_t n) {
 
 static void impl_exp(const float* in, float* out, size_t n) {
     for (size_t i = 0; i < n; ++i) {
-        out[i] = std::exp(in[i]);
+        out[i] = sleef_exp_u10(in[i]);
     }
 }
 
 static void impl_log(const float* in, float* out, size_t n) {
     for (size_t i = 0; i < n; ++i) {
-        out[i] = std::log(in[i]);
+        out[i] = sleef_log_u10(in[i]);
     }
 }
 
 static void impl_tanh(const float* in, float* out, size_t n) {
     for (size_t i = 0; i < n; ++i) {
-        out[i] = std::tanh(in[i]);
+        out[i] = sleef_tanh_u10(in[i]);
     }
 }
 
 static void impl_sigmoid(const float* in, float* out, size_t n) {
     for (size_t i = 0; i < n; ++i) {
-        out[i] = 1.0f / (1.0f + std::exp(-in[i]));
+        out[i] = 1.0f / (1.0f + sleef_exp_u10(-in[i]));
     }
 }
