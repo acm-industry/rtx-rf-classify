@@ -6,6 +6,7 @@
 
 #include "tensor.h"
 #include "blas_ops.h"
+#include "precision.h"
 
 template <std::size_t XN, std::size_t KN, std::size_t Padding, std::size_t OutIdx, class T, std::size_t... Is>
 constexpr T conv1d_point_unrolled_impl(const T* x_ptr, const T* w_ptr, std::index_sequence<Is...>) {
@@ -45,7 +46,7 @@ requires (
     XTens::rank == 1 &&
     WeightTens::rank == 1 &&
     std::same_as<typename XTens::value_type, typename WeightTens::value_type> &&
-    (std::same_as<typename XTens::value_type, float> || std::same_as<typename XTens::value_type, double>)
+    SupportedScalar<typename XTens::value_type>
 )
 auto Conv1D(const XTens& x, const WeightTens& weight, const A& allocator = A()) {
     using T = typename XTens::value_type;
@@ -91,15 +92,15 @@ auto Conv1D(const XTens& x, const WeightTens& weight, const A& allocator = A()) 
             continue;
         }
 
-        T acc{};
+        accumulation_type_t<T> acc{};
         for (std::size_t k = 0; k < KN; ++k) {
             const std::size_t padded_idx = o + k;
             if (padded_idx < padding) continue;
             const std::size_t xi = padded_idx - padding;
             if (xi >= XN) continue;
-            acc += x_ptr[xi] * w_ptr[k];
+            acc += promote_for_math(x_ptr[xi]) * promote_for_math(w_ptr[k]);
         }
-        out_ptr[o] = acc;
+        out_ptr[o] = cast_from_accum<T>(acc);
     }
 
     return out;
@@ -119,8 +120,7 @@ requires (
     std::same_as<std::remove_cv_t<typename XTens::value_type>, std::remove_cv_t<typename OutTens::value_type>> &&
     !std::is_const_v<typename OutTens::value_type> &&
     (
-        std::same_as<std::remove_cv_t<typename XTens::value_type>, float> ||
-        std::same_as<std::remove_cv_t<typename XTens::value_type>, double>
+        SupportedScalar<std::remove_cv_t<typename XTens::value_type>>
     )
 )
 constexpr void Conv1DInPlace(const XTens& x, const WeightTens& weight, OutTens& out) {
@@ -169,15 +169,15 @@ constexpr void Conv1DInPlace(const XTens& x, const WeightTens& weight, OutTens& 
             continue;
         }
 
-        out_t acc{};
+        accumulation_type_t<T> acc{};
         for (std::size_t k = 0; k < KN; ++k) {
             const std::size_t padded_idx = o + k;
             if (padded_idx < padding) continue;
             const std::size_t xi = padded_idx - padding;
             if (xi >= XN) continue;
-            acc += static_cast<out_t>(x_ptr[xi]) * static_cast<out_t>(w_ptr[k]);
+            acc += promote_for_math(x_ptr[xi]) * promote_for_math(w_ptr[k]);
         }
-        out_ptr[o] = acc;
+        out_ptr[o] = cast_from_accum<out_t>(acc);
     }
 }
 

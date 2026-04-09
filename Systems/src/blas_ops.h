@@ -4,7 +4,11 @@
 #include <experimental/mdspan>
 #include <concepts>
 #include <type_traits>
+#include "precision.h"
+
+#ifdef USE_BLAS
 #include <cblas.h>
+#endif
 
 /*
     Purpose: Type-safe, mdspan-aware BLAS wrappers with compile-time dimension checks.
@@ -25,7 +29,7 @@ namespace blas {
 template<typename M>
 concept Matrix2D = requires {
     typename M::element_type;
-    requires std::floating_point<typename M::element_type>;
+    requires SupportedScalar<typename M::element_type>;
     requires M::rank == 2;
     requires M::static_extent(0) != std::dynamic_extent;
     requires M::static_extent(1) != std::dynamic_extent;
@@ -34,7 +38,7 @@ concept Matrix2D = requires {
 template<typename V>
 concept Vector1D = requires {
     typename V::element_type;
-    requires std::floating_point<typename V::element_type>;
+    requires SupportedScalar<typename V::element_type>;
     requires V::rank == 1;
     requires V::static_extent(0) != std::dynamic_extent;
 };
@@ -46,6 +50,7 @@ template<Matrix2D MA, Matrix2D MB, Matrix2D MC>
              std::same_as<typename MA::element_type, typename MC::element_type>
 void gemm(const MA& a, const MB& b, MC& c) {
     using T = std::remove_cv_t<typename MA::element_type>;
+    using accum_t = accumulation_type_t<T>;
 
     static constexpr auto M = MA::static_extent(0);
     static constexpr auto K = MA::static_extent(1);
@@ -55,6 +60,7 @@ void gemm(const MA& a, const MB& b, MC& c) {
     static_assert(MC::static_extent(0) == M, "gemm: C rows must equal A rows");
     static_assert(MC::static_extent(1) == N, "gemm: C columns must equal B columns");
 
+#ifdef USE_BLAS
     if constexpr (std::is_same_v<T, float>) {
         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                     static_cast<int>(M), static_cast<int>(N), static_cast<int>(K),
@@ -75,6 +81,20 @@ void gemm(const MA& a, const MB& b, MC& c) {
         static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>,
             "gemm: only float and double are supported by CBLAS");
     }
+#else
+    const T* a_ptr = a.data();
+    const T* b_ptr = b.data();
+    T* c_ptr = c.data();
+    for (size_t i = 0; i < M; ++i) {
+        for (size_t j = 0; j < N; ++j) {
+            accum_t sum = accum_t{};
+            for (size_t k = 0; k < K; ++k) {
+                sum += promote_for_math(a_ptr[i * K + k]) * promote_for_math(b_ptr[k * N + j]);
+            }
+            c_ptr[i * N + j] = cast_from_accum<T>(sum);
+        }
+    }
+#endif
 }
 
 // y = A * x
@@ -84,6 +104,7 @@ template<Matrix2D MA, Vector1D VX, Vector1D VY>
              std::convertible_to<typename MA::element_type, typename VY::element_type>
 void gemv(const MA& a, const VX& x, VY& y) {
     using T = std::remove_cv_t<typename MA::element_type>;
+    using accum_t = accumulation_type_t<T>;
 
     static constexpr auto M = MA::static_extent(0);
     static constexpr auto N = MA::static_extent(1);
@@ -91,6 +112,7 @@ void gemv(const MA& a, const VX& x, VY& y) {
     static_assert(VX::static_extent(0) == N, "gemv: x length must equal A columns");
     static_assert(VY::static_extent(0) == M, "gemv: y length must equal A rows");
 
+#ifdef USE_BLAS
     if constexpr (std::is_same_v<T, float>) {
         cblas_sgemv(CblasRowMajor, CblasNoTrans,
                     static_cast<int>(M), static_cast<int>(N),
@@ -111,6 +133,18 @@ void gemv(const MA& a, const VX& x, VY& y) {
         static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>,
             "gemv: only float and double are supported by CBLAS");
     }
+#else
+    const T* a_ptr = a.data();
+    const auto* x_ptr = x.data();
+    auto* y_ptr = y.data();
+    for (size_t i = 0; i < M; ++i) {
+        accum_t sum = accum_t{};
+        for (size_t j = 0; j < N; ++j) {
+            sum += promote_for_math(a_ptr[i * N + j]) * promote_for_math(x_ptr[j]);
+        }
+        y_ptr[i] = cast_from_accum<T>(sum);
+    }
+#endif
 }
 
 // result = a . b
@@ -119,10 +153,12 @@ template<Vector1D VA, Vector1D VB>
     requires std::same_as<typename VA::element_type, typename VB::element_type>
 auto dot(const VA& a, const VB& b) -> typename VA::element_type {
     using T = std::remove_cv_t<typename VA::element_type>;
+    using accum_t = accumulation_type_t<T>;
 
     static constexpr auto N = VA::static_extent(0);
     static_assert(VB::static_extent(0) == N, "dot: vector lengths must match");
 
+#ifdef USE_BLAS
     if constexpr (std::is_same_v<T, float>) {
         return cblas_sdot(static_cast<int>(N), a.data(), 1, b.data(), 1);
     } else if constexpr (std::is_same_v<T, double>) {
@@ -131,6 +167,15 @@ auto dot(const VA& a, const VB& b) -> typename VA::element_type {
         static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>,
             "dot: only float and double are supported by CBLAS");
     }
+#else
+    const T* a_ptr = a.data();
+    const T* b_ptr = b.data();
+    accum_t sum = accum_t{};
+    for (size_t i = 0; i < N; ++i) {
+        sum += promote_for_math(a_ptr[i]) * promote_for_math(b_ptr[i]);
+    }
+    return cast_from_accum<T>(sum);
+#endif
 }
 
 } // namespace blas

@@ -75,7 +75,7 @@ class MemoryBuffer {
         template<class U, std::size_t UAlignment = Alignment> struct rebind { using other = Allocator<U, UAlignment>; };
 
         T* allocate(std::size_t n) {
-            return buffer.get().alloc<T, Alignment>(n);
+            return buffer.get().template alloc<T, Alignment>(n);
         }
 
         void deallocate([[maybe_unused]] T* p, [[maybe_unused]] std::size_t n) {}  // no-op for bump allocator
