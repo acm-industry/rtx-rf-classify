@@ -11,6 +11,9 @@ option(USE_BLAS  "Use BLAS (OpenBLAS preferred)" ON)
 option(USE_FFTW  "Use FFTW3" OFF)
 option(USE_HWY   "Use Google Highway SIMD" OFF)
 option(WEIGHTS_FP16 "Link FP16 weight blobs; decode to float at startup (half ROM vs float32)" OFF)
+option(COMPUTE_FP16 "Run inference buffers and kernels in FP16, with float accumulation where needed" OFF)
+set(WEIGHT_OBJECTS_DIR "${CMAKE_SOURCE_DIR}/src/binaries" CACHE PATH
+  "Directory containing generated weight object files (*.o)")
 
 FetchContent_Declare(
   mdspan
@@ -56,11 +59,15 @@ if(USE_FFTW)
   endif()
 endif()
 
-file(GLOB WEIGHT_OBJECTS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/binaries/*.o")
+if(COMPUTE_FP16 AND NOT WEIGHTS_FP16)
+  message(FATAL_ERROR "COMPUTE_FP16 requires WEIGHTS_FP16=ON so linked weight blobs are binary16.")
+endif()
+
+file(GLOB WEIGHT_OBJECTS CONFIGURE_DEPENDS "${WEIGHT_OBJECTS_DIR}/*.o")
 
 if(NOT WEIGHT_OBJECTS)
   message(FATAL_ERROR
-    "No weight object files found in ${CMAKE_SOURCE_DIR}/src/binaries. "
+    "No weight object files found in ${WEIGHT_OBJECTS_DIR}. "
     "Generate them first or fix WEIGHT_OBJECTS path."
   )
 endif()
@@ -75,6 +82,12 @@ if(WEIGHTS_FP16)
   target_compile_definitions(classify PRIVATE WEIGHTS_FP16=1)
 else()
   target_compile_definitions(classify PRIVATE WEIGHTS_FP16=0)
+endif()
+
+if(COMPUTE_FP16)
+  target_compile_definitions(classify PRIVATE COMPUTE_FP16=1)
+else()
+  target_compile_definitions(classify PRIVATE COMPUTE_FP16=0)
 endif()
 
 target_include_directories(classify PRIVATE

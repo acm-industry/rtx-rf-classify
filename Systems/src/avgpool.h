@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "tensor.h"
+#include "precision.h"
 
 template <size_t N, size_t output_size>
 struct adaptive_avgpool1d_params {
@@ -50,7 +51,7 @@ constexpr void AdaptiveAvgPool1DInPlace(
 ) {
     using in_t = typename XTens::value_type;
     using out_t = typename OutTens::value_type;
-    using T = std::remove_cv_t<in_t>;
+    using accum_t = accumulation_type_t<out_t>;
     static constexpr size_t N = XTens::extents_type::static_extent(0);
     using params = adaptive_avgpool1d_params<N, output_size>;
     static constexpr size_t stride = params::stride;
@@ -73,11 +74,11 @@ constexpr void AdaptiveAvgPool1DInPlace(
 
     for (size_t o = 0; o < output_size; ++o) {
         const size_t start = o * stride;
-        out_t acc{};
+        accum_t acc{};
         for (size_t k = 0; k < kernel_size; ++k) {
-            acc += static_cast<out_t>(x_ptr[start + k]);
+            acc += promote_for_math(x_ptr[start + k]);
         }
-        out_ptr[o] = acc / static_cast<out_t>(kernel_size);
+        out_ptr[o] = cast_from_accum<out_t>(acc / static_cast<accum_t>(kernel_size));
     }
 }
 

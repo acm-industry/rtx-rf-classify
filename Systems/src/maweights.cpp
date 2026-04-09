@@ -1,4 +1,5 @@
 #include <cstddef>
+#include "precision.h"
 
 #if WEIGHTS_FP16
 #include "fp16_decode.h"
@@ -53,60 +54,84 @@ constexpr size_t E_LIN1B = 128;
 constexpr size_t E_LIN2 = 11 * 128;
 constexpr size_t E_LIN2B = 11;
 
-void decode_fp16_blob(const unsigned char* start, float* dst, size_t n) {
+template <class T>
+void decode_fp16_blob(const unsigned char* start, T* dst, size_t n) {
     const auto* p = reinterpret_cast<const uint16_t*>(start);
     for (size_t i = 0; i < n; ++i) {
-        dst[i] = rtx::fp16::half_to_float(p[i]);
+        dst[i] = static_cast<T>(rtx::fp16::half_to_float(p[i]));
     }
 }
 
-alignas(32) static float buf_conv_1d_l1[E_CONV1];
-alignas(32) static float buf_conv_1d_bias_l1[E_BIAS1];
-alignas(32) static float buf_bn_1d_l1[E_BN1];
+alignas(32) static infer_t buf_conv_1d_l1[E_CONV1];
+alignas(32) static infer_t buf_conv_1d_bias_l1[E_BIAS1];
+alignas(32) static infer_t buf_bn_1d_l1[E_BN1];
 
-alignas(32) static float buf_conv_1d_l2[E_CONV2];
-alignas(32) static float buf_conv_1d_bias_l2[E_BIAS2];
-alignas(32) static float buf_bn_1d_l2[E_BN2];
+alignas(32) static infer_t buf_conv_1d_l2[E_CONV2];
+alignas(32) static infer_t buf_conv_1d_bias_l2[E_BIAS2];
+alignas(32) static infer_t buf_bn_1d_l2[E_BN2];
 
-alignas(32) static float buf_conv_1d_l3[E_CONV3];
-alignas(32) static float buf_conv_1d_bias_l3[E_BIAS3];
-alignas(32) static float buf_bn_1d_l3[E_BN3];
+alignas(32) static infer_t buf_conv_1d_l3[E_CONV3];
+alignas(32) static infer_t buf_conv_1d_bias_l3[E_BIAS3];
+alignas(32) static infer_t buf_bn_1d_l3[E_BN3];
 
-alignas(32) static float buf_conv_1d_l4[E_CONV4];
-alignas(32) static float buf_conv_1d_bias_l4[E_BIAS4];
-alignas(32) static float buf_bn_1d_l4[E_BN4];
+alignas(32) static infer_t buf_conv_1d_l4[E_CONV4];
+alignas(32) static infer_t buf_conv_1d_bias_l4[E_BIAS4];
+alignas(32) static infer_t buf_bn_1d_l4[E_BN4];
 
-alignas(32) static float buf_linear_mat_1[E_LIN1];
-alignas(32) static float buf_linear_add_1[E_LIN1B];
+alignas(32) static infer_t buf_linear_mat_1[E_LIN1];
+alignas(32) static infer_t buf_linear_add_1[E_LIN1B];
 
-alignas(32) static float buf_linear_mat_2[E_LIN2];
-alignas(32) static float buf_linear_add_2[E_LIN2B];
+alignas(32) static infer_t buf_linear_mat_2[E_LIN2];
+alignas(32) static infer_t buf_linear_add_2[E_LIN2B];
 
 } // namespace
 
-float* weights_conv_1d_l1 = buf_conv_1d_l1;
-float* weights_conv_1d_bias_l1 = buf_conv_1d_bias_l1;
-float* weights_bn_1d_l1 = buf_bn_1d_l1;
+infer_t* weights_conv_1d_l1 = buf_conv_1d_l1;
+infer_t* weights_conv_1d_bias_l1 = buf_conv_1d_bias_l1;
+infer_t* weights_bn_1d_l1 = buf_bn_1d_l1;
 
-float* weights_conv_1d_l2 = buf_conv_1d_l2;
-float* weights_conv_1d_bias_l2 = buf_conv_1d_bias_l2;
-float* weights_bn_1d_l2 = buf_bn_1d_l2;
+infer_t* weights_conv_1d_l2 = buf_conv_1d_l2;
+infer_t* weights_conv_1d_bias_l2 = buf_conv_1d_bias_l2;
+infer_t* weights_bn_1d_l2 = buf_bn_1d_l2;
 
-float* weights_conv_1d_l3 = buf_conv_1d_l3;
-float* weights_conv_1d_bias_l3 = buf_conv_1d_bias_l3;
-float* weights_bn_1d_l3 = buf_bn_1d_l3;
+infer_t* weights_conv_1d_l3 = buf_conv_1d_l3;
+infer_t* weights_conv_1d_bias_l3 = buf_conv_1d_bias_l3;
+infer_t* weights_bn_1d_l3 = buf_bn_1d_l3;
 
-float* weights_conv_1d_l4 = buf_conv_1d_l4;
-float* weights_conv_1d_bias_l4 = buf_conv_1d_bias_l4;
-float* weights_bn_1d_l4 = buf_bn_1d_l4;
+infer_t* weights_conv_1d_l4 = buf_conv_1d_l4;
+infer_t* weights_conv_1d_bias_l4 = buf_conv_1d_bias_l4;
+infer_t* weights_bn_1d_l4 = buf_bn_1d_l4;
 
-float* linear_mat_1 = buf_linear_mat_1;
-float* linear_add_1 = buf_linear_add_1;
+infer_t* linear_mat_1 = buf_linear_mat_1;
+infer_t* linear_add_1 = buf_linear_add_1;
 
-float* linear_mat_2 = buf_linear_mat_2;
-float* linear_add_2 = buf_linear_add_2;
+infer_t* linear_mat_2 = buf_linear_mat_2;
+infer_t* linear_add_2 = buf_linear_add_2;
 
 void init_fp16_weights() {
+#if COMPUTE_FP16
+    weights_conv_1d_l1 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_conv_1d_l1_start));
+    weights_conv_1d_bias_l1 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_conv_1d_bias_l1_start));
+    weights_bn_1d_l1 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_bn_1d_l1_start));
+
+    weights_conv_1d_l2 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_conv_1d_l2_start));
+    weights_conv_1d_bias_l2 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_conv_1d_bias_l2_start));
+    weights_bn_1d_l2 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_bn_1d_l2_start));
+
+    weights_conv_1d_l3 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_conv_1d_l3_start));
+    weights_conv_1d_bias_l3 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_conv_1d_bias_l3_start));
+    weights_bn_1d_l3 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_bn_1d_l3_start));
+
+    weights_conv_1d_l4 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_conv_1d_l4_start));
+    weights_conv_1d_bias_l4 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_conv_1d_bias_l4_start));
+    weights_bn_1d_l4 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(weights_bn_1d_l4_start));
+
+    linear_mat_1 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(linear_mat_1_start));
+    linear_add_1 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(linear_add_1_start));
+
+    linear_mat_2 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(linear_mat_2_start));
+    linear_add_2 = reinterpret_cast<infer_t*>(const_cast<unsigned char*>(linear_add_2_start));
+#else
     decode_fp16_blob(weights_conv_1d_l1_start, buf_conv_1d_l1, E_CONV1);
     decode_fp16_blob(weights_conv_1d_bias_l1_start, buf_conv_1d_bias_l1, E_BIAS1);
     decode_fp16_blob(weights_bn_1d_l1_start, buf_bn_1d_l1, E_BN1);
@@ -128,30 +153,35 @@ void init_fp16_weights() {
 
     decode_fp16_blob(linear_mat_2_start, buf_linear_mat_2, E_LIN2);
     decode_fp16_blob(linear_add_2_start, buf_linear_add_2, E_LIN2B);
+#endif
 }
 
 #else
 
-float* weights_conv_1d_l1 = (float*)weights_conv_1d_l1_start;
-float* weights_conv_1d_bias_l1 = (float*)weights_conv_1d_bias_l1_start;
-float* weights_bn_1d_l1 = (float*)weights_bn_1d_l1_start;
+#if COMPUTE_FP16
+#error "COMPUTE_FP16 requires WEIGHTS_FP16 so linked blobs are binary16."
+#endif
 
-float* weights_conv_1d_l2 = (float*)weights_conv_1d_l2_start;
-float* weights_conv_1d_bias_l2 = (float*)weights_conv_1d_bias_l2_start;
-float* weights_bn_1d_l2 = (float*)weights_bn_1d_l2_start;
+infer_t* weights_conv_1d_l1 = (infer_t*)weights_conv_1d_l1_start;
+infer_t* weights_conv_1d_bias_l1 = (infer_t*)weights_conv_1d_bias_l1_start;
+infer_t* weights_bn_1d_l1 = (infer_t*)weights_bn_1d_l1_start;
 
-float* weights_conv_1d_l3 = (float*)weights_conv_1d_l3_start;
-float* weights_conv_1d_bias_l3 = (float*)weights_conv_1d_bias_l3_start;
-float* weights_bn_1d_l3 = (float*)weights_bn_1d_l3_start;
+infer_t* weights_conv_1d_l2 = (infer_t*)weights_conv_1d_l2_start;
+infer_t* weights_conv_1d_bias_l2 = (infer_t*)weights_conv_1d_bias_l2_start;
+infer_t* weights_bn_1d_l2 = (infer_t*)weights_bn_1d_l2_start;
 
-float* weights_conv_1d_l4 = (float*)weights_conv_1d_l4_start;
-float* weights_conv_1d_bias_l4 = (float*)weights_conv_1d_bias_l4_start;
-float* weights_bn_1d_l4 = (float*)weights_bn_1d_l4_start;
+infer_t* weights_conv_1d_l3 = (infer_t*)weights_conv_1d_l3_start;
+infer_t* weights_conv_1d_bias_l3 = (infer_t*)weights_conv_1d_bias_l3_start;
+infer_t* weights_bn_1d_l3 = (infer_t*)weights_bn_1d_l3_start;
 
-float* linear_mat_1 = (float*)linear_mat_1_start;
-float* linear_add_1 = (float*)linear_add_1_start;
+infer_t* weights_conv_1d_l4 = (infer_t*)weights_conv_1d_l4_start;
+infer_t* weights_conv_1d_bias_l4 = (infer_t*)weights_conv_1d_bias_l4_start;
+infer_t* weights_bn_1d_l4 = (infer_t*)weights_bn_1d_l4_start;
 
-float* linear_mat_2 = (float*)linear_mat_2_start;
-float* linear_add_2 = (float*)linear_add_2_start;
+infer_t* linear_mat_1 = (infer_t*)linear_mat_1_start;
+infer_t* linear_add_1 = (infer_t*)linear_add_1_start;
+
+infer_t* linear_mat_2 = (infer_t*)linear_mat_2_start;
+infer_t* linear_add_2 = (infer_t*)linear_add_2_start;
 
 #endif

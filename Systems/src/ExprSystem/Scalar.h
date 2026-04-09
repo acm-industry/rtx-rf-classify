@@ -36,8 +36,8 @@ struct Scalar {
     }
 };
 
-template <class TargetExtents>
-constexpr auto broadcast(float value) {
+template <class TargetExtents, class T>
+constexpr auto broadcast(T value) {
     using scalar_type = Scalar<decltype(value)>;
     return BroadcastExpr<scalar_type, TargetExtents>{scalar_type(value)};
 }

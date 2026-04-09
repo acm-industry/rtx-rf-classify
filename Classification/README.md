@@ -32,3 +32,34 @@ Use `load_checkpoint_into_model(your_model, path, ...)` if you construct the mod
 - `precision="fp32"` / `"fp16"` forces casts after load.
 
 See `model_utils.py` for details.
+
+## Forward inference CLI
+
+Run full forward inference in forced FP32 or forced FP16 from the same checkpoint:
+
+```bash
+cd Classification
+
+python3 scripts/forward_inference.py \
+  dataset/radioml_2016.10a.npz \
+  --checkpoint ../Systems/src/cnn/radioml_cnn_pytorch.pth \
+  --precision fp32
+
+python3 scripts/forward_inference.py \
+  dataset/radioml_2016.10a.npz \
+  --checkpoint ../Systems/src/cnn/radioml_cnn_pytorch.pth \
+  --precision fp16
+```
+
+The script prints:
+- model/input dtype
+- elapsed time
+- samples/sec
+- accuracy if the `.npz` contains `y`
+
+You can also save predictions or logits for direct FP32 vs FP16 comparisons:
+
+```bash
+python3 scripts/forward_inference.py dataset/radioml_2016.10a.npz --precision fp32 --save-preds outputs/preds_fp32.npy --save-logits outputs/logits_fp32.npy
+python3 scripts/forward_inference.py dataset/radioml_2016.10a.npz --precision fp16 --save-preds outputs/preds_fp16.npy --save-logits outputs/logits_fp16.npy
+```
