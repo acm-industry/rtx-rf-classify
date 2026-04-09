@@ -40,8 +40,8 @@ This notebook does exactly the same per-sample TCP protocol as the embedded C++ 
 ### 3) Generate System weight blobs (FP32 and FP16)
 ```bash
 cd Systems/scripts/binaries
-python3 convert_pth_to_bin.py ../src/cnn/radioml_cnn_pytorch.pth
-python3 convert_pth_to_bin.py ../src/cnn/radioml_cnn_pytorch.pth --fp16
+python3 convert_pth_to_bin.py ../../src/cnn/radioml_cnn_pytorch.pth
+python3 convert_pth_to_bin.py ../../src/cnn/radioml_cnn_pytorch.pth --fp16
 ```
 
 ### 4) Build C++ binaries
