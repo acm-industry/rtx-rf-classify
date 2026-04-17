@@ -32,3 +32,4 @@ First build: ~2-4 hours (LLVM ~90 min, Verilator ~15 min, hardware verilate ~30 
 
 - `Dockerfile.riscv-rvv`: Spike ISA simulation environment (Ubuntu 24.04, Clang, Spike, pk)
 - `Dockerfile.riscv-rtl`: Ara RTL simulation environment (Ubuntu 24.04, full Ara toolchain + Verilated hardware)
+
