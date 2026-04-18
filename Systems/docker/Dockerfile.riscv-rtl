@@ -7,8 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config \
     autoconf automake autotools-dev \
     device-tree-compiler libboost-regex-dev libboost-system-dev \
-    libelf-dev flex bison help2man texinfo \
+    libelf-dev flex libfl-dev bison help2man texinfo \
     zlib1g-dev \
+    clang lld \
     python3 python3-pip \
     curl \
     ca-certificates \
@@ -65,6 +66,9 @@ RUN make verilator
 # ── Hardware: install Bender, checkout IPs, apply patches, verilate ──
 RUN cd hardware && make checkout
 RUN cd hardware && make apply-patches
+# Strip non-printable/non-ASCII characters that Verilator 5.x rejects in .vlt files
+RUN tr -cd '[:print:]\n\t' < hardware/tb/verilator/waiver.vlt > /tmp/waiver.vlt && \
+    mv /tmp/waiver.vlt hardware/tb/verilator/waiver.vlt
 RUN cd hardware && make verilate
 
 ENV PATH="${ARA_DIR}/install/riscv-llvm/bin:${ARA_DIR}/install/verilator/bin:${PATH}"
