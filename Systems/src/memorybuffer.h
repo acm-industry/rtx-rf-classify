@@ -17,7 +17,7 @@ class MemoryBuffer {
     template <class T, std::size_t Alignment = alignof(T)> requires ( Alignment >= alignof(T) && ( ( Alignment & (Alignment - 1) ) == 0 ) )
     T* alloc(std::size_t num) {
         if (num == 0) throw std::bad_alloc();
-    
+
         std::size_t bytes = sizeof(T) * num;
         std::byte* current = buf + offset;
         std::size_t space = capacity - offset;
@@ -75,7 +75,7 @@ class MemoryBuffer {
         template<class U, std::size_t UAlignment = Alignment> struct rebind { using other = Allocator<U, UAlignment>; };
 
         T* allocate(std::size_t n) {
-            return buffer.get().alloc<T, Alignment>(n);
+            return buffer.get().template alloc<T, Alignment>(n);
         }
 
         void deallocate([[maybe_unused]] T* p, [[maybe_unused]] std::size_t n) {}  // no-op for bump allocator

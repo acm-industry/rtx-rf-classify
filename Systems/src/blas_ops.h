@@ -1,7 +1,13 @@
 #ifndef __BLAS_OPS_H__
 #define __BLAS_OPS_H__
 
+#if __has_include(<mdspan>)
+#include <mdspan>
+#elif __has_include(<experimental/mdspan>)
 #include <experimental/mdspan>
+#else
+#error "No mdspan header found. Provide C++23 <mdspan> or a compatible <experimental/mdspan>."
+#endif
 #include <concepts>
 #include <type_traits>
 #include <cblas.h>
