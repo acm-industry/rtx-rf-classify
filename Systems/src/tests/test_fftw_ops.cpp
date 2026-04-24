@@ -122,6 +122,38 @@ void test_r2c() {
     TEST("R2C AC", approx_equal(out.flat(1).real(), 0.0f));
 }
 
+void test_rank2_c2c() {
+    using Extent = std::extents<size_t, 4, 4>;
+    using T = std::complex<float>;
+
+    DynTensor<T, Extent> in;
+    DynTensor<T, Extent> out;
+
+    for (size_t i = 0; i < 16; ++i) {
+        in.flat(i) = T(0.0f, 0.0f);
+    }
+    for (size_t i = 0; i < 4; ++i) {
+        in.flat(i * 4 + 0) = T(1.0f, 0.0f);
+    }
+
+    FFTW<float, Extent, FFTW_FORWARD, FFTW_ESTIMATE> fft;
+    fft(in, out);
+
+    bool row0_ok = true;
+    for (size_t k2 = 0; k2 < 4; ++k2) {
+        if (!approx_equal(out.flat(k2).real(), 4.0f)) row0_ok = false;
+        if (!approx_equal(out.flat(k2).imag(), 0.0f)) row0_ok = false;
+    }
+    TEST("Rank-2 C2C Row 0 == 4", row0_ok);
+
+    bool rest_zero = true;
+    for (size_t i = 4; i < 16; ++i) {
+        if (!approx_equal(out.flat(i).real(), 0.0f)) rest_zero = false;
+        if (!approx_equal(out.flat(i).imag(), 0.0f)) rest_zero = false;
+    }
+    TEST("Rank-2 C2C Others == 0", rest_zero);
+}
+
 void test_c2r() {
     using OutExtent = std::extents<size_t, 4>;
     using RealT = float;
@@ -147,6 +179,7 @@ int main() {
     test_basic_plan();
     test_eval_integration();
     test_custom_allocator();
+    test_rank2_c2c();
     test_r2c();
     test_c2r();
     

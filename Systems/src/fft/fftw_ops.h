@@ -4,6 +4,7 @@
 #include <type_traits>
 #include <complex>
 #include <concepts>
+#include <array>
 #include <fftw3.h>
 #include "../tensor.h"
 #include "fftw_wrapper.h"
@@ -69,13 +70,16 @@ private:
 
     void create_plan(TensorBase<val_t, E>& in, TensorBase<val_t, E>& out) {
         if (valid_) return;
-        static_assert(E::rank() == 1, "Currently only rank 1 tensors are supported for FFTW");
-        
-        int n = E::static_extent(0);
+
+        std::array<int, E::rank()> n{};
+        for (std::size_t i = 0; i < E::rank(); ++i) {
+            n[i] = static_cast<int>(E::static_extent(i));
+        }
+
         plan_ = traits::plan_dft(
-            1, &n, 
-            reinterpret_cast<typename traits::complex_t*>(in.data()), 
-            reinterpret_cast<typename traits::complex_t*>(out.data()), 
+            static_cast<int>(E::rank()), n.data(),
+            reinterpret_cast<typename traits::complex_t*>(in.data()),
+            reinterpret_cast<typename traits::complex_t*>(out.data()),
             Sign, Flags
         );
         valid_ = plan_ != nullptr;

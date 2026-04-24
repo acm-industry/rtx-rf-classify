@@ -12,15 +12,15 @@ A type trait mapping `float`, `double`, and `std::complex` variations to their u
 The main Complex-to-Complex Fourier Transform handler. 
 
 - `T`: The underlying floating point type or complex type (`float`, `double`, `std::complex<float>`, `std::complex<double>`).
-- `E`: Complete `std::extents` specification defining the shape of the transformation. Only single-rank transforms are currently supported. 
+- `E`: Complete `std::extents` specification defining the shape of the transformation. Arbitrary rank is supported; the extents are materialized into a stack `std::array<int, E::rank()>` at plan-creation time and forwarded to `fftw_plan_dft(rank, n, ...)`.
 - `Sign`: Represents the transform direction (`FFTW_FORWARD`, `FFTW_BACKWARD`).
 - `Flags`: Defines FFTW optimization efforts for this particular plan (e.g., `FFTW_MEASURE` vs `FFTW_ESTIMATE`).
 
 ### `template <typename T, FixedExtent E, unsigned Flags = FFTW_ESTIMATE> class FFTW_R2C;`
-The Real-to-Complex Fourier Transform handler. Converts a real layout tensor into an optimally smaller complex layout representing mirrored frequency domain buckets. 
+The Real-to-Complex Fourier Transform handler. Converts a real layout tensor into an optimally smaller complex layout representing mirrored frequency domain buckets. Currently rank-1 only (uses the FFTW 1D entry point `fftw_plan_dft_r2c_1d`).
 
 ### `template <typename T, FixedExtent OutE, unsigned Flags = FFTW_ESTIMATE> class FFTW_C2R;`
-The Complex-to-Real Fourier Transform handler. Restores a real layout tensor from a half-length frequency format mirrored structure.
+The Complex-to-Real Fourier Transform handler. Restores a real layout tensor from a half-length frequency format mirrored structure. Currently rank-1 only (uses the FFTW 1D entry point `fftw_plan_dft_c2r_1d`).
 
 #### Constructor
 - `FFTW() = default;` (Same for `FFTW_R2C` and `FFTW_C2R`)
