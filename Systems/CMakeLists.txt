@@ -36,17 +36,15 @@ if(USE_BLAS)
 endif()
 
 if(USE_FFTW)
-  find_package(PkgConfig QUIET)
+  find_path(FFTW3_INCLUDE_DIRS NAMES fftw3.h PATHS /opt/homebrew/include /usr/local/include /usr/include)
+  find_library(FFTW3_LIBRARIES NAMES fftw3 PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+  find_library(FFTW3F_LIBRARIES NAMES fftw3f PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
 
-  if(PkgConfig_FOUND)
-    pkg_check_modules(FFTW3 QUIET fftw3)
-  endif()
-
-  if(FFTW3_FOUND)
+  if(FFTW3_INCLUDE_DIRS AND FFTW3_LIBRARIES AND FFTW3F_LIBRARIES)
     add_library(FFTW3::fftw3 INTERFACE IMPORTED)
     set_target_properties(FFTW3::fftw3 PROPERTIES
       INTERFACE_INCLUDE_DIRECTORIES "${FFTW3_INCLUDE_DIRS}"
-      INTERFACE_LINK_LIBRARIES "${FFTW3_LIBRARIES}"
+      INTERFACE_LINK_LIBRARIES "${FFTW3_LIBRARIES};${FFTW3F_LIBRARIES}"
     )
   else()
     message(FATAL_ERROR
@@ -101,4 +99,29 @@ else()
   if(CMAKE_CROSSCOMPILING)
     target_link_options(classify PRIVATE -static)
   endif()
+endif()
+
+# Build the FFTW wrapper tests
+add_executable(test_fftw_ops
+  src/tests/test_fftw_ops.cpp
+)
+
+target_include_directories(test_fftw_ops PRIVATE
+  src
+  src/vector
+)
+
+target_link_libraries(test_fftw_ops PRIVATE mdspan)
+
+if(USE_FFTW)
+  target_link_libraries(test_fftw_ops PRIVATE FFTW3::fftw3)
+  target_compile_definitions(test_fftw_ops PRIVATE USE_FFTW)
+endif()
+
+if(MSVC)
+  target_compile_options(test_fftw_ops PRIVATE /W4)
+else()
+  target_compile_options(test_fftw_ops PRIVATE
+    -O3 -Wall -Wextra -Wpedantic -march=native -mtune=native
+  )
 endif()
