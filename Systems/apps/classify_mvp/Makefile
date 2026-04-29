@@ -34,7 +34,7 @@ app_srcs := \
 # the linker flags here; Ara's runtime drives those.
 EXTRA_CFLAGS   ?=
 EXTRA_CXXFLAGS ?= -std=c++23 -fno-exceptions -fno-rtti -O3
-EXTRA_ASFLAGS  ?= -I.
+EXTRA_ASFLAGS  ?= -I$(app_name)
 
 EXTRA_DEFINES  ?= -DBAREMETAL_USE_ARA_PRINTF=1
 

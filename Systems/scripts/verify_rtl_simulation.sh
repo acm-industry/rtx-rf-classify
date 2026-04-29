@@ -110,13 +110,18 @@ else
     cp -v "${SYSTEMS_SRC}/weights.S" "${SYSTEMS_SRC}/baremetal_input.S" \
         "${APP_DIR}/" 2>&1 | sed 's|.*/||;s|^|    |'
 
-    # 4) Raw .bin payloads referenced by .incbin (resolved relative to the
-    #    .S file's directory at assembly time, so they must live next to it).
+    # 4) Raw .bin payloads referenced by .incbin.  LLVM's assembler resolves
+    #    .incbin paths relative to the make CWD (${ARA_DIR}/apps/), NOT the
+    #    source file's directory, so the files must live in both places.
     cp -v "${SYSTEMS_BIN}/"*.bin "${APP_DIR}/" 2>&1 | sed 's|.*/||;s|^|    |'
+    cp -v "${SYSTEMS_BIN}/"*.bin "${ARA_DIR}/apps/" 2>&1 | sed 's|.*/||;s|^|    |'
     if [ -f "${SYSTEMS_SRC}/binaries/baremetal_input.bin" ]; then
         cp -v "${SYSTEMS_SRC}/binaries/baremetal_input.bin" \
             "${SYSTEMS_SRC}/binaries/baremetal_expected.bin" \
             "${APP_DIR}/" 2>&1 | sed 's|.*/||;s|^|    |'
+        cp -v "${SYSTEMS_SRC}/binaries/baremetal_input.bin" \
+            "${SYSTEMS_SRC}/binaries/baremetal_expected.bin" \
+            "${ARA_DIR}/apps/" 2>&1 | sed 's|.*/||;s|^|    |'
     fi
 
     echo ""
