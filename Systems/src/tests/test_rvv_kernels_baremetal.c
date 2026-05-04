@@ -152,23 +152,16 @@ static size_t argmax(const float *buf, size_t n) {
 static int failures = 0;
 
 static void check(const char *name, float got, float expected) {
+    (void)name;
     float diff = got - expected;
     if (diff < 0) diff = -diff;
     float tol = 0.5f;
-    const char *status = (diff <= tol) ? "PASS" : "FAIL";
-    printf("  %-20s %s  (got %.4f, expected %.4f)\n", name, status,
-           (double)got, (double)expected);
     if (diff > tol) ++failures;
 }
 
 // ── Main ──
 
 int main() {
-    printf("\n");
-    printf("========================================\n");
-    printf("  RTX RVV Kernels -- Ara RTL Simulation\n");
-    printf("========================================\n\n");
-
     // ── Vector ops ──
     float a[VEC_N], b[VEC_N], c[VEC_N], out[VEC_N];
 
@@ -177,25 +170,16 @@ int main() {
     fill(b, VEC_N);
     fill(c, VEC_N);
 
-    start_timer();
     kernel_add(a, b, out, VEC_N);
-    stop_timer();
-    printf("  kernel_add:     %10ld cycles\n", (long)get_timer());
     check("vec_add", checksum(out, VEC_N), checksum(a, VEC_N) + checksum(b, VEC_N));
 
-    start_timer();
     float d = kernel_dot(a, b, VEC_N);
-    stop_timer();
-    printf("  kernel_dot:     %10ld cycles\n", (long)get_timer());
     float d_ref = 0.0f;
     for (size_t i = 0; i < VEC_N; ++i) d_ref += a[i] * b[i];
     check("vec_dot", d, d_ref);
 
     // ── Fused multiply-add (expression system) ──
-    start_timer();
     kernel_fma(a, b, c, out, VEC_N);
-    stop_timer();
-    printf("  kernel_fma:     %10ld cycles\n", (long)get_timer());
     float fma_ref = 0.0f;
     for (size_t i = 0; i < VEC_N; ++i) fma_ref += a[i] + b[i] * c[i];
     check("expr_fma", checksum(out, VEC_N), fma_ref);
@@ -206,10 +190,7 @@ int main() {
     fill(mat, MAT_ROWS * MAT_COLS);
     fill(x, MAT_COLS);
 
-    start_timer();
     kernel_matvec(mat, x, mv_out, MAT_ROWS, MAT_COLS);
-    stop_timer();
-    printf("  kernel_matvec:  %10ld cycles\n", (long)get_timer());
     float mv_ref = 0.0f;
     for (size_t i = 0; i < MAT_ROWS; ++i) {
         float row_sum = 0.0f;
@@ -225,19 +206,13 @@ int main() {
     fill(conv_in, CONV_LEN);
     fill(conv_w, CONV_K);
 
-    start_timer();
     kernel_conv1d(conv_in, CONV_LEN, conv_w, CONV_K, conv_out, CONV_LEN);
-    stop_timer();
-    printf("  kernel_conv1d:  %10ld cycles\n", (long)get_timer());
     check("cnn_conv1d", checksum(conv_out, CONV_LEN), checksum(conv_out, CONV_LEN));
 
     // ── ReLU ──
     float relu_out[CONV_LEN];
 
-    start_timer();
     kernel_relu(conv_out, relu_out, CONV_LEN);
-    stop_timer();
-    printf("  kernel_relu:    %10ld cycles\n", (long)get_timer());
     float relu_sum = 0.0f;
     for (size_t i = 0; i < CONV_LEN; ++i)
         relu_sum += (conv_out[i] > 0.0f ? conv_out[i] : 0.0f);
@@ -247,10 +222,7 @@ int main() {
     size_t pool_out_len = (CONV_LEN - POOL_K) / POOL_STRIDE + 1;
     float pool_out[CONV_LEN];
 
-    start_timer();
     kernel_maxpool(relu_out, CONV_LEN, POOL_K, POOL_STRIDE, pool_out, pool_out_len);
-    stop_timer();
-    printf("  kernel_maxpool: %10ld cycles\n", (long)get_timer());
     check("cnn_maxpool", checksum(pool_out, pool_out_len),
           checksum(pool_out, pool_out_len));
 
@@ -262,10 +234,7 @@ int main() {
     fill(lin_b, LINEAR_OUT);
     fill(lin_in, LINEAR_IN);
 
-    start_timer();
     kernel_linear(lin_w, lin_b, lin_in, lin_out, LINEAR_OUT, LINEAR_IN);
-    stop_timer();
-    printf("  kernel_linear:  %10ld cycles\n", (long)get_timer());
     float lin_ref = 0.0f;
     for (size_t i = 0; i < LINEAR_OUT; ++i) {
         float s = lin_b[i];
@@ -285,19 +254,13 @@ int main() {
     fill(e2e_in, CONV_LEN);
     fill(e2e_conv_w, CONV_K);
 
-    start_timer();
     kernel_conv1d(e2e_in, CONV_LEN, e2e_conv_w, CONV_K, e2e_conv_out, CONV_LEN);
     kernel_relu(e2e_conv_out, e2e_relu, CONV_LEN);
     kernel_maxpool(e2e_relu, CONV_LEN, POOL_K, POOL_STRIDE, e2e_pool, pool_out_len);
     fill(e2e_lin_w, LINEAR_OUT * LINEAR_IN);
     fill(e2e_lin_b, LINEAR_OUT);
     kernel_linear(e2e_lin_w, e2e_lin_b, e2e_pool, e2e_lin_out, LINEAR_OUT, LINEAR_IN);
-    stop_timer();
-    printf("  e2e_cnn:        %10ld cycles\n", (long)get_timer());
 
-    size_t predicted = argmax(e2e_lin_out, LINEAR_OUT);
-    printf("  e2e_cnn predicted class=%lu\n", (unsigned long)predicted);
-
-    printf("\n%d failure(s)\n", failures);
+    printf("%d failure(s)\n", failures);
     return failures;
 }
