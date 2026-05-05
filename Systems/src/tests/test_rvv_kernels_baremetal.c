@@ -45,12 +45,6 @@ static void fill(float *buf, size_t n) {
         buf[i] = pseudo_rand();
 }
 
-static float checksum(const float *buf, size_t n) {
-    float s = 0.0f;
-    for (size_t i = 0; i < n; ++i)
-        s += buf[i];
-    return s;
-}
 
 // ── Vectorizable kernels (noinline so they appear as distinct symbols) ──
 
@@ -113,7 +107,7 @@ void kernel_relu(const float *__restrict in, float *__restrict out,
 }
 
 __attribute__((noinline))
-void kernel_maxpool(const float *__restrict in, size_t in_len,
+void kernel_maxpool(const float *__restrict in, size_t in_len __attribute__((unused)),
                     size_t pool_k, size_t stride,
                     float *__restrict out, size_t out_len) {
     for (size_t o = 0; o < out_len; ++o) {
