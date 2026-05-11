@@ -2,7 +2,13 @@
 #define __TENSOR_H__
 
 #include <memory>
+#if __has_include(<mdspan>)
+#include <mdspan>
+#elif __has_include(<experimental/mdspan>)
 #include <experimental/mdspan>
+#else
+#error "No mdspan header found. Provide C++23 <mdspan> or a compatible <experimental/mdspan>."
+#endif
 #include <concepts>
 #include <algorithm>
 #include <cassert>
@@ -87,6 +93,8 @@ public:
     static constexpr auto extents = E{};
     static constexpr std::size_t rank = E::rank();
     static constexpr std::size_t static_size = compute_static_size<E>();
+    static constexpr std::size_t byte_size = sizeof(value_type) * static_size;
+    static constexpr std::size_t alignment = alignof(value_type);
     static constexpr std::size_t iter_size() noexcept { return static_size; }
 
     static constexpr std::array<std::size_t, rank> strides = compute_strides<E>();

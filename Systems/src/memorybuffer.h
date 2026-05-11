@@ -7,15 +7,6 @@
 #include <cstdlib>
 #include <memory>
 
-// Bare-metal targets compile with -fno-exceptions and have nowhere to surface
-// allocator failures - we abort instead.  The native build keeps the
-// std::bad_alloc semantics the rest of the codebase already expects.
-#if defined(__cpp_exceptions) && __cpp_exceptions
-#  define MEMBUF_OOM() throw std::bad_alloc()
-#else
-#  define MEMBUF_OOM() std::abort()
-#endif
-
 class MemoryBuffer {
    private:
     std::byte* buf;
@@ -25,14 +16,14 @@ class MemoryBuffer {
 
     template <class T, std::size_t Alignment = alignof(T)> requires ( Alignment >= alignof(T) && ( ( Alignment & (Alignment - 1) ) == 0 ) )
     T* alloc(std::size_t num) {
-        if (num == 0) MEMBUF_OOM();
+        if (num == 0) throw std::bad_alloc();
 
         std::size_t bytes = sizeof(T) * num;
         std::byte* current = buf + offset;
         std::size_t space = capacity - offset;
         void* aligned_ptr = current;
 
-        if ( !std::align( Alignment, bytes, aligned_ptr, space ) ) MEMBUF_OOM();
+        if ( !std::align( Alignment, bytes, aligned_ptr, space ) ) throw std::bad_alloc();
 
         std::byte* aligned_byte_ptr = static_cast<std::byte*>(aligned_ptr);
         offset = ( aligned_byte_ptr - buf ) + bytes;
