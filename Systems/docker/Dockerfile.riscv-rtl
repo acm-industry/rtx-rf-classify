@@ -69,6 +69,16 @@ RUN cd hardware && make apply-patches
 # Strip non-printable/non-ASCII characters that Verilator 5.x rejects in .vlt files
 RUN tr -cd '[:print:]\n\t' < hardware/tb/verilator/waiver.vlt > /tmp/waiver.vlt && \
     mv /tmp/waiver.vlt hardware/tb/verilator/waiver.vlt
+
+# Patch Ara's hardware Makefile:
+#   1. Enable Verilator multi-threading at verilate time (capped at 16 — the
+#      design can't partition into more, and high counts cause OOM/failures)
+#   2. Parallelize the C++ compile of the verilated model with all cores
+RUN sed -i \
+    -e '/\$(veril_path)\/verilator -f/a\  --threads 16 \\' \
+    -e 's/make -j4 -f/make -j'"$(nproc)"' -f/' \
+    hardware/Makefile
+
 RUN cd hardware && make verilate
 
 ENV PATH="${ARA_DIR}/install/riscv-llvm/bin:${ARA_DIR}/install/verilator/bin:${PATH}"
