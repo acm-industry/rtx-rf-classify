@@ -2,6 +2,7 @@
 #define __EXPR_FUNCTIONS_H__
 
 #include <algorithm>
+#include <cmath>
 
 #include "Expression.h"
 

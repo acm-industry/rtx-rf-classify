@@ -45,7 +45,9 @@ void BroadcastConvolve(
     const TensorBase<float, E3>& bias, TensorBase<float, E4>& out
 ) {
     std::array<float, E4::static_extent(1)> membuf;
-    f32TensorView<E4::static_extent(1)> partial{std::span(membuf)};
+    f32TensorView<E4::static_extent(1)> partial{
+        std::span<float, E4::static_extent(1)>{membuf}
+    };
 
     for (size_t oc = 0; oc < E2::static_extent(0); ++oc) {
         auto out_oc = out[oc];
@@ -55,7 +57,7 @@ void BroadcastConvolve(
 
         for (size_t ic = 0; ic < E2::static_extent(1); ++ic) {
             auto x_ic = input[ic];
-            auto w_oc_ic = weights[oc, ic];
+            auto w_oc_ic = weights[oc][ic];
 
             Conv1DInPlace<padding>(x_ic, w_oc_ic, partial);
 
@@ -215,12 +217,10 @@ namespace model {
 int main() {
     static constexpr size_t INPUT_ALLOC_BYTES = 1024 * 1024;
     std::array<std::byte, INPUT_ALLOC_BYTES> memory_store;
-    MemoryBuffer buf(
-        std::span{memory_store}
-    );  
+    MemoryBuffer buf{std::span<std::byte, INPUT_ALLOC_BYTES>{memory_store}};
 
     alignas(32) std::array<float, 3 * 128> input_mem;
-    f32TensorView<3, 128> input( std::span{input_mem} );
+    f32TensorView<3, 128> input{std::span<float, 3 * 128>{input_mem}};
 
     model::scratch_alloc_t seq_alloc = buf.get_allocator<std::byte, 32>();
     model::FeatureExtractor feature_extractor{
@@ -277,7 +277,7 @@ int main() {
 
             std::array<float, 11> final_buf;
 
-            f32TensorView<11> final{std::span(final_buf)};
+            f32TensorView<11> final{std::span<float, 11>{final_buf}};
 
             buf.reset();
 
