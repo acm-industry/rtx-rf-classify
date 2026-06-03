@@ -22,6 +22,7 @@ MDSPAN_FETCH_DIR="${MDSPAN_FETCH_DIR:-${REPO_ROOT}/build/_deps/mdspan-src}"
 MDSPAN_GIT_URL="${MDSPAN_GIT_URL:-https://github.com/kokkos/mdspan.git}"
 MDSPAN_GIT_REF="${MDSPAN_GIT_REF:-stable}"
 CROSS_PREFIX="${CROSS_PREFIX:-}"
+READELF="${READELF:-}"
 
 die() {
   echo "ERROR: $*" >&2
@@ -141,6 +142,7 @@ find_cross_prefix() {
 }
 
 find_cross_prefix
+READELF="${READELF:-${CROSS_PREFIX}readelf}"
 
 mapfile -t weight_bins < <(find "${BIN_DIR}" -maxdepth 1 -type f -name '*.bin' | sort)
 [[ "${#weight_bins[@]}" -gt 0 ]] || die "no .bin weight files found in ${BIN_DIR}"
@@ -237,6 +239,7 @@ ld_flags=(
   -nostartfiles
   -nostdlib
   -lgcc
+  -Wl,--build-id=none
   -Wl,--gc-sections
   -T"${COMMON_DIR}/link.ld"
 )
@@ -253,5 +256,22 @@ make -B -C "${ARA_APPS_DIR}" "bin/${APP}" \
   "RISCV_CXXFLAGS=${cxx_flags[*]}" \
   "RISCV_LDFLAGS=${ld_flags[*]}"
 
+app_bin="${ARA_APPS_DIR}/bin/${APP}"
+if command_exists "${READELF}"; then
+  bad_load_addr=0
+  while read -r vaddr; do
+    if (( vaddr < 0x80000000 )); then
+      bad_load_addr=1
+    fi
+  done < <("${READELF}" -lW "${app_bin}" | awk '$1 == "LOAD" { print $3 }')
+
+  if [[ "${bad_load_addr}" == "1" ]]; then
+    "${READELF}" -lW "${app_bin}" >&2
+    die "ELF has a PT_LOAD segment below 0x80000000; Verilator's RAM loader will reject it"
+  fi
+else
+  echo "WARNING: ${READELF} not found; skipping ELF load-address sanity check" >&2
+fi
+
 echo
-echo "Built: ${ARA_APPS_DIR}/bin/${APP}"
+echo "Built: ${app_bin}"
