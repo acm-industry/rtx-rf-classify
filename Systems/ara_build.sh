@@ -8,6 +8,7 @@ set -euo pipefail
 #   <ara-root>/apps/rf_classify
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 ARA_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd -P)"
 ARA_APPS_DIR="${ARA_ROOT}/apps"
 COMMON_DIR="${ARA_APPS_DIR}/common"
@@ -16,7 +17,10 @@ APP="${APP:-rf_classify}"
 SRC_DIR="${SRC_DIR:-${SCRIPT_DIR}/src}"
 BIN_DIR="${BIN_DIR:-${SCRIPT_DIR}/scripts/binaries}"
 APP_DIR="${ARA_APPS_DIR}/${APP}"
-MDSPAN_INCLUDE_DIR="${MDSPAN_INCLUDE_DIR:-${SCRIPT_DIR}/../build/_deps/mdspan-src/include}"
+MDSPAN_INCLUDE_DIR="${MDSPAN_INCLUDE_DIR:-}"
+MDSPAN_FETCH_DIR="${MDSPAN_FETCH_DIR:-${REPO_ROOT}/build/_deps/mdspan-src}"
+MDSPAN_GIT_URL="${MDSPAN_GIT_URL:-https://github.com/kokkos/mdspan.git}"
+MDSPAN_GIT_REF="${MDSPAN_GIT_REF:-stable}"
 
 die() {
   echo "ERROR: $*" >&2
@@ -51,8 +55,59 @@ if [[ -d "${APP_DIR}/.git" ]]; then
   die "refusing to overwrite git checkout: ${APP_DIR}"
 fi
 
-require_dir "${MDSPAN_INCLUDE_DIR}/experimental"
-require_dir "${MDSPAN_INCLUDE_DIR}/mdspan"
+find_mdspan() {
+  local candidate
+
+  if [[ -n "${MDSPAN_INCLUDE_DIR}" ]]; then
+    require_dir "${MDSPAN_INCLUDE_DIR}/experimental"
+    require_dir "${MDSPAN_INCLUDE_DIR}/mdspan"
+    return
+  fi
+
+  mdspan_candidates=(
+    "${REPO_ROOT}/build/_deps/mdspan-src/include"
+    "${SCRIPT_DIR}/../build/_deps/mdspan-src/include"
+    "${SCRIPT_DIR}/build/_deps/mdspan-src/include"
+    "${ARA_ROOT}/build/_deps/mdspan-src/include"
+    "${ARA_ROOT}/../build/_deps/mdspan-src/include"
+    "${MDSPAN_FETCH_DIR}/include"
+  )
+
+  for candidate in "${mdspan_candidates[@]}"; do
+    if [[ -d "${candidate}/experimental" && -d "${candidate}/mdspan" ]]; then
+      MDSPAN_INCLUDE_DIR="${candidate}"
+      return
+    fi
+  done
+}
+
+fetch_mdspan() {
+  echo "mdspan:        fetching ${MDSPAN_GIT_URL} (${MDSPAN_GIT_REF})"
+  mkdir -p "$(dirname "${MDSPAN_FETCH_DIR}")"
+
+  if [[ -d "${MDSPAN_FETCH_DIR}/.git" ]]; then
+    if git -C "${MDSPAN_FETCH_DIR}" fetch --depth 1 origin "${MDSPAN_GIT_REF}"; then
+      git -C "${MDSPAN_FETCH_DIR}" checkout -q FETCH_HEAD
+    else
+      git -C "${MDSPAN_FETCH_DIR}" fetch --depth 1 origin
+    fi
+  else
+    if ! git clone --depth 1 --branch "${MDSPAN_GIT_REF}" "${MDSPAN_GIT_URL}" "${MDSPAN_FETCH_DIR}"; then
+      rm -rf "${MDSPAN_FETCH_DIR}"
+      git clone --depth 1 "${MDSPAN_GIT_URL}" "${MDSPAN_FETCH_DIR}"
+      git -C "${MDSPAN_FETCH_DIR}" checkout -q "${MDSPAN_GIT_REF}" 2>/dev/null || true
+    fi
+  fi
+
+  MDSPAN_INCLUDE_DIR="${MDSPAN_FETCH_DIR}/include"
+  require_dir "${MDSPAN_INCLUDE_DIR}/experimental"
+  require_dir "${MDSPAN_INCLUDE_DIR}/mdspan"
+}
+
+find_mdspan
+if [[ -z "${MDSPAN_INCLUDE_DIR}" ]]; then
+  fetch_mdspan
+fi
 
 mapfile -t weight_bins < <(find "${BIN_DIR}" -maxdepth 1 -type f -name '*.bin' | sort)
 [[ "${#weight_bins[@]}" -gt 0 ]] || die "no .bin weight files found in ${BIN_DIR}"
@@ -88,6 +143,7 @@ fi
 
 cp -R "${MDSPAN_INCLUDE_DIR}/experimental" "${APP_DIR}/experimental"
 cp -R "${MDSPAN_INCLUDE_DIR}/mdspan" "${APP_DIR}/mdspan"
+echo "mdspan:        ${MDSPAN_INCLUDE_DIR}"
 
 for bin in "${weight_bins[@]}"; do
   cp "${bin}" "${APP_DIR}/weights/"
