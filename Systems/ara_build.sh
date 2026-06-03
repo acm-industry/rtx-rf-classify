@@ -21,6 +21,7 @@ MDSPAN_INCLUDE_DIR="${MDSPAN_INCLUDE_DIR:-}"
 MDSPAN_FETCH_DIR="${MDSPAN_FETCH_DIR:-${REPO_ROOT}/build/_deps/mdspan-src}"
 MDSPAN_GIT_URL="${MDSPAN_GIT_URL:-https://github.com/kokkos/mdspan.git}"
 MDSPAN_GIT_REF="${MDSPAN_GIT_REF:-stable}"
+CROSS_PREFIX="${CROSS_PREFIX:-}"
 
 die() {
   echo "ERROR: $*" >&2
@@ -33,6 +34,10 @@ require_file() {
 
 require_dir() {
   [[ -d "$1" ]] || die "missing required directory: $1"
+}
+
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
 }
 
 require_dir "${ARA_APPS_DIR}"
@@ -109,6 +114,34 @@ if [[ -z "${MDSPAN_INCLUDE_DIR}" ]]; then
   fetch_mdspan
 fi
 
+find_cross_prefix() {
+  local prefix
+
+  if [[ -n "${CROSS_PREFIX}" ]]; then
+    command_exists "${CROSS_PREFIX}g++" || die "CROSS_PREFIX does not provide g++: ${CROSS_PREFIX}g++"
+    return
+  fi
+
+  cross_prefix_candidates=(
+    "${ARA_ROOT}/install/riscv-gcc/bin/riscv64-unknown-elf-"
+    "${ARA_ROOT}/cheshire/sw/cva6-sdk/buildroot/output/host/bin/riscv64-buildroot-linux-gnu-"
+    "riscv64-linux-gnu-"
+    "riscv64-unknown-elf-"
+    "riscv64-buildroot-linux-gnu-"
+  )
+
+  for prefix in "${cross_prefix_candidates[@]}"; do
+    if command_exists "${prefix}g++" && command_exists "${prefix}gcc"; then
+      CROSS_PREFIX="${prefix}"
+      return
+    fi
+  done
+
+  die "no RISC-V GNU C++ toolchain found; set CROSS_PREFIX, e.g. CROSS_PREFIX=riscv64-linux-gnu-"
+}
+
+find_cross_prefix
+
 mapfile -t weight_bins < <(find "${BIN_DIR}" -maxdepth 1 -type f -name '*.bin' | sort)
 [[ "${#weight_bins[@]}" -gt 0 ]] || die "no .bin weight files found in ${BIN_DIR}"
 
@@ -116,6 +149,7 @@ echo "Ara root:      ${ARA_ROOT}"
 echo "Source:        ${SRC_DIR}"
 echo "Generated app: ${APP_DIR}"
 echo "App name:      ${APP}"
+echo "Toolchain:     ${CROSS_PREFIX}gcc / ${CROSS_PREFIX}g++"
 
 rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}/ExprSystem" "${APP_DIR}/weights"
@@ -169,6 +203,9 @@ weights_s="${APP_DIR}/weights.S"
 } > "${weights_s}"
 
 common_flags=(
+  -march=rv64gcv
+  -mabi=lp64d
+  -mcmodel=medany
   -I"${APP_DIR}"
   -I"${COMMON_DIR}"
   -O3
@@ -177,10 +214,15 @@ common_flags=(
   -fno-builtin-printf
   -ffunction-sections
   -fdata-sections
+  "\$(DEFINES)"
+)
+
+c_flags=(
+  "${common_flags[@]}"
+  -std=gnu99
 )
 
 cxx_flags=(
-  "\$(RISCV_FLAGS)"
   "${common_flags[@]}"
   -std=gnu++23
   -fno-exceptions
@@ -189,9 +231,26 @@ cxx_flags=(
   -fno-threadsafe-statics
 )
 
+ld_flags=(
+  -static
+  -nostartfiles
+  -nostdlib
+  -lgcc
+  -Wl,--gc-sections
+  -T"${COMMON_DIR}/link.ld"
+)
+
 echo "Building ${APP}..."
 make -B -C "${ARA_APPS_DIR}" "bin/${APP}" \
-  "RISCV_CXXFLAGS=${cxx_flags[*]}"
+  COMPILER=gcc \
+  "RISCV_CC=${CROSS_PREFIX}gcc" \
+  "RISCV_CXX=${CROSS_PREFIX}g++" \
+  "RISCV_OBJDUMP=${CROSS_PREFIX}objdump" \
+  "RISCV_OBJDUMP_FLAGS=" \
+  "RISCV_STRIP=${CROSS_PREFIX}strip" \
+  "RISCV_CCFLAGS=${c_flags[*]}" \
+  "RISCV_CXXFLAGS=${cxx_flags[*]}" \
+  "RISCV_LDFLAGS=${ld_flags[*]}"
 
 echo
 echo "Built: ${ARA_APPS_DIR}/bin/${APP}"
