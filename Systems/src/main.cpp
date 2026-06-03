@@ -34,6 +34,8 @@ static bool should_log_sample(uint32_t index, uint32_t batch_len) {
     return index == 0 || index + 1 == batch_len || ((index + 1) % 16u) == 0;
 }
 
+static bool g_model_checkpoint = false;
+
 template <size_t... idxs>
     requires(sizeof...(idxs) > 0)
 using f32Tensor = DynTensor<
@@ -53,6 +55,16 @@ void BroadcastConvolve(
     const TensorBase<float, E1>& input, const TensorBase<float, E2>& weights,
     const TensorBase<float, E3>& bias, TensorBase<float, E4>& out
 ) {
+    if (g_model_checkpoint) {
+        printf(
+            "rf_classify:   conv oc=%u ic=%u k=%u len=%u start\n",
+            static_cast<unsigned>(E2::static_extent(0)),
+            static_cast<unsigned>(E2::static_extent(1)),
+            static_cast<unsigned>(E2::static_extent(2)),
+            static_cast<unsigned>(E4::static_extent(1))
+        );
+    }
+
     std::array<float, E4::static_extent(1)> membuf;
     f32TensorView<E4::static_extent(1)> partial{
         std::span<float, E4::static_extent(1)>{membuf}
@@ -73,6 +85,19 @@ void BroadcastConvolve(
             for (size_t i = 0; i < E4::static_extent(1); ++i)
                 out_oc[i] += partial[i];
         }
+
+        if (g_model_checkpoint && ((oc + 1) % 32u) == 0 &&
+            (oc + 1) < E2::static_extent(0)) {
+            printf(
+                "rf_classify:   conv progress %u/%u\n",
+                static_cast<unsigned>(oc + 1),
+                static_cast<unsigned>(E2::static_extent(0))
+            );
+        }
+    }
+
+    if (g_model_checkpoint) {
+        printf("rf_classify:   conv done\n");
     }
 }
 
@@ -164,12 +189,20 @@ namespace model {
 
     struct GlobalAvgPool {
         void operator()(const L4Conv& in, Vec128& out) const {
+            if (g_model_checkpoint) {
+                printf("rf_classify:   global avg pool start\n");
+            }
+
             for (size_t i = 0; i < 128; ++i) {
                 auto in_slice = in[i];
                 TensorBase<float, std::extents<size_t, 1>> out_scalar{
                     std::span<float, 1>(out.data() + i, 1)
                 };
                 AdaptiveAvgPool1DInPlace<1>(in_slice, out_scalar);
+            }
+
+            if (g_model_checkpoint) {
+                printf("rf_classify:   global avg pool done\n");
             }
         }
     };
@@ -182,7 +215,19 @@ namespace model {
             : w(std::span<float, O * I>(weights, O * I)) {}
 
         void operator()(const XIn& in, XOut& out) const {
+            if (g_model_checkpoint) {
+                printf(
+                    "rf_classify:   linear %ux%u start\n",
+                    static_cast<unsigned>(O),
+                    static_cast<unsigned>(I)
+                );
+            }
+
             blas::gemv(w, in, out);
+
+            if (g_model_checkpoint) {
+                printf("rf_classify:   linear done\n");
+            }
         }
     };
 
@@ -232,6 +277,15 @@ int main() {
 
     alignas(32) std::array<float, 3 * 128> input_mem;
     f32TensorView<3, 128> input{std::span<float, 3 * 128>{input_mem}};
+    alignas(32) std::array<
+        float, model::FeatureExtractor::output_tensor_type::static_size>
+        feature_mem;
+    model::FeatureExtractor::output_tensor_type features{
+        std::span<
+            float, model::FeatureExtractor::output_tensor_type::static_size>{
+            feature_mem
+        }
+    };
 
     model::scratch_alloc_t seq_alloc = buf.get_allocator<std::byte, 32>();
     model::FeatureExtractor feature_extractor{
@@ -259,7 +313,6 @@ int main() {
         model::Linear2{linear_mat_2},
         model::Bias2{linear_add_2}
     };
-    model::Model model{seq_alloc, feature_extractor, classifier_head};
 
     printf("rf_classify: model ready\n");
 
@@ -315,7 +368,42 @@ int main() {
                 printf("rf_classify: sample %u/%u running model\n", i + 1, batch_len);
             }
 
-            model(input, final);
+            g_model_checkpoint = log_sample;
+
+            if (log_sample) {
+                printf(
+                    "rf_classify: sample %u/%u feature extractor start\n",
+                    i + 1,
+                    batch_len
+                );
+            }
+
+            feature_extractor(input, features);
+
+            if (log_sample) {
+                printf(
+                    "rf_classify: sample %u/%u feature extractor done\n",
+                    i + 1,
+                    batch_len
+                );
+                printf(
+                    "rf_classify: sample %u/%u classifier head start\n",
+                    i + 1,
+                    batch_len
+                );
+            }
+
+            classifier_head(features, final);
+
+            if (log_sample) {
+                printf(
+                    "rf_classify: sample %u/%u classifier head done\n",
+                    i + 1,
+                    batch_len
+                );
+            }
+
+            g_model_checkpoint = false;
 
             unsigned char argmax = 0;
             float best = final[0];
