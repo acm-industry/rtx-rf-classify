@@ -17,12 +17,21 @@
 #include "maweights.h"
 #include "maxpool.h"
 #include "memorybuffer.h"
+#if __has_include("printf.h")
+#include "printf.h"
+#else
+#include <cstdio>
+#endif
 #include "sequential.h"
 #include "tensor.h"
 
 static uint32_t from_big_endian(uint32_t value) {
     return ((value & 0x000000ffu) << 24) | ((value & 0x0000ff00u) << 8) |
            ((value & 0x00ff0000u) >> 8) | ((value & 0xff000000u) >> 24);
+}
+
+static bool should_log_sample(uint32_t index, uint32_t batch_len) {
+    return index == 0 || index + 1 == batch_len || ((index + 1) % 16u) == 0;
 }
 
 template <size_t... idxs>
@@ -215,6 +224,8 @@ namespace model {
 }  // namespace model
 
 int main() {
+    printf("rf_classify: boot\n");
+
     static constexpr size_t INPUT_ALLOC_BYTES = 1024 * 1024;
     std::array<std::byte, INPUT_ALLOC_BYTES> memory_store;
     MemoryBuffer buf{std::span<std::byte, INPUT_ALLOC_BYTES>{memory_store}};
@@ -250,11 +261,15 @@ int main() {
     };
     model::Model model{seq_alloc, feature_extractor, classifier_head};
 
+    printf("rf_classify: model ready\n");
+
     RFIO rfio;
 
     for (;;) {
         // protocol: 4 bytes of batch len, then batch_len instances of 3
         // * 128 bytes.
+
+        printf("rf_classify: waiting for batch\n");
 
         uint32_t batch_len_wire;
         rfio.recv(
@@ -265,9 +280,24 @@ int main() {
         );
         uint32_t batch_len = from_big_endian(batch_len_wire);
 
-        if (batch_len == 0) continue;
+        printf("rf_classify: batch_len=%u\n", batch_len);
+
+        if (batch_len == 0) {
+            printf("rf_classify: empty batch ignored\n");
+            continue;
+        }
 
         for (uint32_t i = 0; i < batch_len; ++i) {
+            bool log_sample = should_log_sample(i, batch_len);
+
+            if (log_sample) {
+                printf(
+                    "rf_classify: sample %u/%u receiving input\n",
+                    i + 1,
+                    batch_len
+                );
+            }
+
             rfio.recv(
                 std::span<std::byte>(
                     reinterpret_cast<std::byte*>(input.data()),
@@ -281,6 +311,10 @@ int main() {
 
             buf.reset();
 
+            if (log_sample) {
+                printf("rf_classify: sample %u/%u running model\n", i + 1, batch_len);
+            }
+
             model(input, final);
 
             unsigned char argmax = 0;
@@ -293,12 +327,23 @@ int main() {
                 }
             }
 
+            if (log_sample) {
+                printf(
+                    "rf_classify: sample %u/%u result=%u\n",
+                    i + 1,
+                    batch_len,
+                    static_cast<unsigned>(argmax)
+                );
+            }
+
             rfio.send(
                 std::span<std::byte>(
                     reinterpret_cast<std::byte*>(&argmax), 1
                 )
             );
         }
+
+        printf("rf_classify: batch complete\n");
     }
 
     return 0;
