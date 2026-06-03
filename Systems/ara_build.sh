@@ -212,6 +212,7 @@ common_flags=(
   -ffast-math
   -fno-common
   -fno-builtin-printf
+  -fno-stack-protector
   -ffunction-sections
   -fdata-sections
   "\$(DEFINES)"
