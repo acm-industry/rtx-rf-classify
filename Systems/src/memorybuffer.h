@@ -6,6 +6,7 @@
 #include <span>
 #include <cstdlib>
 #include <memory>
+#include <new>
 
 class MemoryBuffer {
    private:
@@ -14,16 +15,26 @@ class MemoryBuffer {
     std::size_t offset;
     bool owns;
 
+    [[noreturn]] static void allocation_failed() {
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+        throw std::bad_alloc();
+#elif defined(__GNUC__) || defined(__clang__)
+        __builtin_trap();
+#else
+        std::abort();
+#endif
+    }
+
     template <class T, std::size_t Alignment = alignof(T)> requires ( Alignment >= alignof(T) && ( ( Alignment & (Alignment - 1) ) == 0 ) )
     T* alloc(std::size_t num) {
-        if (num == 0) throw std::bad_alloc();
+        if (num == 0) allocation_failed();
 
         std::size_t bytes = sizeof(T) * num;
         std::byte* current = buf + offset;
         std::size_t space = capacity - offset;
         void* aligned_ptr = current;
 
-        if ( !std::align( Alignment, bytes, aligned_ptr, space ) ) throw std::bad_alloc();
+        if ( !std::align( Alignment, bytes, aligned_ptr, space ) ) allocation_failed();
 
         std::byte* aligned_byte_ptr = static_cast<std::byte*>(aligned_ptr);
         offset = ( aligned_byte_ptr - buf ) + bytes;
@@ -36,7 +47,9 @@ class MemoryBuffer {
         : buf( (std::byte*)std::aligned_alloc(32, capacity) ),
           capacity(capacity),
           offset(0),
-          owns(true) {}
+          owns(true) {
+        if (buf == nullptr) allocation_failed();
+    }
 
     MemoryBuffer(std::span<std::byte> ext)
         : buf(ext.data()), capacity(ext.size()), offset(0), owns(false) {}

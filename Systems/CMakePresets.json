@@ -1,0 +1,48 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "riscv",
+      "displayName": "RISC-V static",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/riscv",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/riscv64-linux-gnu.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FETCHCONTENT_UPDATES_DISCONNECTED": "ON"
+      }
+    },
+    {
+      "name": "host",
+      "displayName": "Host static",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/host",
+      "cacheVariables": {
+        "CLASSIFY_DEFAULT_RISCV_TOOLCHAIN": "OFF",
+        "CMAKE_BUILD_TYPE": "Release",
+        "FETCHCONTENT_UPDATES_DISCONNECTED": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "riscv",
+      "configurePreset": "riscv",
+      "targets": [
+        "classify"
+      ]
+    },
+    {
+      "name": "host",
+      "configurePreset": "host",
+      "targets": [
+        "classify"
+      ]
+    }
+  ]
+}

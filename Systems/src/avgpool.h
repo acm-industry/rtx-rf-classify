@@ -1,9 +1,11 @@
 #ifndef __AVG_POOL_H__
 #define __AVG_POOL_H__
 
+#include <concepts>
 #include <type_traits>
 #include <utility>
 
+#include "manual_blas.h"
 #include "tensor.h"
 
 template <size_t N, size_t output_size>
@@ -44,7 +46,7 @@ requires (
     std::same_as<std::remove_cv_t<typename XTens::value_type>, std::remove_cv_t<typename OutTens::value_type>> &&
     !std::is_const_v<typename OutTens::value_type>
 )
-constexpr void AdaptiveAvgPool1DInPlace(
+void AdaptiveAvgPool1DInPlace(
     const XTens& x,
     OutTens& out
 ) {
@@ -62,6 +64,13 @@ constexpr void AdaptiveAvgPool1DInPlace(
 
     const in_t* x_ptr = x.data();
     out_t* out_ptr = out.data();
+
+#if defined(__riscv_vector)
+    if constexpr (output_size == 1 && std::same_as<T, float>) {
+        out_ptr[0] = blas::sum_raw<T>(x_ptr, kernel_size) / static_cast<T>(kernel_size);
+        return;
+    }
+#endif
 
     // Fixed-size tensors: fully unroll output points and window reductions for small workloads.
     if constexpr (output_size * kernel_size <= 1024) {

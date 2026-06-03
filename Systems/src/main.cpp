@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <iostream>
+#include <cstdint>
 #include <memory>
 #include <ranges>
 #include <span>
@@ -13,12 +13,17 @@
 #include "avgpool.h"
 #include "batchnorm.h"
 #include "convolve.h"
-#include "maweights.cpp"
+#include "in_out.h"
+#include "maweights.h"
 #include "maxpool.h"
 #include "memorybuffer.h"
-#include "network.h"
 #include "sequential.h"
 #include "tensor.h"
+
+static uint32_t from_big_endian(uint32_t value) {
+    return ((value & 0x000000ffu) << 24) | ((value & 0x0000ff00u) << 8) |
+           ((value & 0x00ff0000u) >> 8) | ((value & 0xff000000u) >> 24);
+}
 
 template <size_t... idxs>
     requires(sizeof...(idxs) > 0)
@@ -61,7 +66,7 @@ void BroadcastConvolve(
 }
 
 namespace model {
-    using scratch_alloc_t = std::allocator<std::byte>;
+    using scratch_alloc_t = MemoryBuffer::Allocator<std::byte, 32UL>;
 
     using In = f32TensorView<3, 128>;
     using L1Conv = f32TensorView<64, 128>;
@@ -208,15 +213,16 @@ namespace model {
 }  // namespace model
 
 int main() {
-    static constexpr size_t INPUT_ALLOC_BYTES = (3 * 128) * sizeof(float) + 256;
+    static constexpr size_t INPUT_ALLOC_BYTES = 1024 * 1024;
+    std::array<std::byte, INPUT_ALLOC_BYTES> memory_store;
     MemoryBuffer buf(
-        INPUT_ALLOC_BYTES
-    );  // Alloc enough for input tensor plus some wiggle room
-    auto alloc = buf.get_allocator<float, 32>();
+        std::span{memory_store}
+    );  
 
-    f32Tensor<3, 128> input(alloc);
+    alignas(32) std::array<float, 3 * 128> input_mem;
+    f32TensorView<3, 128> input( std::span{input_mem} );
 
-    model::scratch_alloc_t seq_alloc{};
+    model::scratch_alloc_t seq_alloc = buf.get_allocator<std::byte, 32>();
     model::FeatureExtractor feature_extractor{
         seq_alloc,
         model::Conv1{weights_conv_1d_l1, weights_conv_1d_bias_l1},
@@ -244,65 +250,54 @@ int main() {
     };
     model::Model model{seq_alloc, feature_extractor, classifier_head};
 
-    Server server(8080);
-
-    std::cout << "Listening on port 8080.\n";
+    RFIO rfio;
 
     for (;;) {
-        Connection conn = server.accept();
-
-        std::cout << "Recieved connection. Running compute...\n";
-
-        // MVP TCP protocol: 4 bytes on batch len, then batch_len instances of 3
+        // protocol: 4 bytes of batch len, then batch_len instances of 3
         // * 128 bytes.
 
-        unsigned int batch_len_net;
-        conn.recv(
+        uint32_t batch_len_wire;
+        rfio.recv(
             std::span<std::byte>(
-                reinterpret_cast<std::byte*>(&batch_len_net),
-                sizeof(unsigned int)
+                reinterpret_cast<std::byte*>(&batch_len_wire),
+                sizeof(batch_len_wire)
             )
         );
-        unsigned int batch_len = ntohl(batch_len_net);
+        uint32_t batch_len = from_big_endian(batch_len_wire);
 
         if (batch_len == 0) continue;
 
-        try {
-            for (unsigned int i = 0; i < batch_len; ++i) {
-                conn.recv(
-                    std::span<std::byte>(
-                        reinterpret_cast<std::byte*>(input.data()),
-                        3 * 128 * sizeof(float)
-                    )
-                );
+        for (uint32_t i = 0; i < batch_len; ++i) {
+            rfio.recv(
+                std::span<std::byte>(
+                    reinterpret_cast<std::byte*>(input.data()),
+                    3 * 128 * sizeof(float)
+                )
+            );
 
-                std::array<float, 11> final_buf;
+            std::array<float, 11> final_buf;
 
-                f32TensorView<11> final{std::span(final_buf)};
+            f32TensorView<11> final{std::span(final_buf)};
 
-                model(input, final);
+            buf.reset();
 
-                unsigned char argmax = 0;
-                float best = final[0];
-                for (unsigned char j = 1; j < 11; ++j) {
-                    float v = final[j];
-                    if (v > best) {
-                        best = v;
-                        argmax = j;
-                    }
+            model(input, final);
+
+            unsigned char argmax = 0;
+            float best = final[0];
+            for (unsigned char j = 1; j < 11; ++j) {
+                float v = final[j];
+                if (v > best) {
+                    best = v;
+                    argmax = j;
                 }
-
-                conn.send(
-                    std::span<std::byte>(
-                        reinterpret_cast<std::byte*>(&argmax), 1
-                    )
-                );
             }
 
-            std::cout << "Batch sent.\n";
-
-        } catch (const std::runtime_error& err) {
-            std::cout << "Connection closed. Killing compute.\n";
+            rfio.send(
+                std::span<std::byte>(
+                    reinterpret_cast<std::byte*>(&argmax), 1
+                )
+            );
         }
     }
 

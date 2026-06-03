@@ -5,7 +5,7 @@
 #include <utility>
 
 #include "tensor.h"
-#include "blas_ops.h"
+#include "manual_blas.h"
 
 template <std::size_t XN, std::size_t KN, std::size_t Padding, std::size_t OutIdx, class T, std::size_t... Is>
 constexpr T conv1d_point_unrolled_impl(const T* x_ptr, const T* w_ptr, std::index_sequence<Is...>) {
